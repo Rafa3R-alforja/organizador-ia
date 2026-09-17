@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#263238"><title>Organizador IA V1.2</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon-192.png">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;color:#17212b}
+header{background:#263238;color:#fff;padding:18px 20px;position:sticky;top:0;z-index:5}h1{margin:0;font-size:24px}header p{margin:5px 0 0;opacity:.8;font-size:13px}
+main{max-width:1100px;margin:auto;padding:16px}.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 3px 16px #00000010}
+h2{font-size:19px;margin:0 0 14px}.drop{border:2px dashed #b7c4cb;border-radius:16px;padding:25px;text-align:center}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+button,label.btn{border:0;border-radius:12px;padding:11px 15px;font-weight:700;font-size:14px;cursor:pointer}.primary{background:#263238;color:#fff}.secondary{background:#e8eef1;color:#17212b}.danger{background:#ffe8e8;color:#9b2222}
+input[type=file]{display:none}.status{font-size:13px;color:#53656f;margin-top:10px}.notice{background:#fff8dd;border-left:4px solid #e2b93b;padding:12px;border-radius:10px;font-size:13px}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.metric{background:#f4f7f8;padding:12px;border-radius:13px}.metric b{display:block;font-size:22px}.item{border:1px solid #e0e6e9;border-radius:15px;padding:15px;margin-top:10px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.label{font-size:10px;color:#667780;text-transform:uppercase;letter-spacing:.05em}.value{font-weight:650;margin-top:3px;word-break:break-word}.badge{display:inline-block;background:#edf2f4;border-radius:20px;padding:5px 9px;font-size:12px;margin:3px 4px 0 0}
+.preview{margin-top:10px;background:#f7f8f9;border-radius:10px;padding:10px;font-size:12px;white-space:pre-wrap;max-height:180px;overflow:auto}.progress{height:8px;background:#e6ebed;border-radius:8px;overflow:hidden;margin-top:10px}.bar{height:100%;width:0;background:#607d8b;transition:.2s}
+.hidden{display:none}.small{font-size:12px;color:#60717a}.check{display:flex;gap:7px;align-items:center}
+@media(max-width:700px){.summary{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>📁 Organizador IA <small>V1.2</small></h1><p>Lectura de contenido + propuestas. Sin cambios automáticos.</p></header>
+<main><section class="card"><button id="installBtn" class="primary hidden">📲 Instalar Organizador IA</button><div id="installHelp" class="small" style="margin-top:8px"></div></section>
+<section class="card"><div class="notice">🛡️ <b>Modo seguro:</b> esta versión analiza los archivos seleccionados y genera propuestas. <b>No renombra, mueve ni elimina ningún archivo.</b></div></section>
+
+<section class="card">
+<h2>1. Seleccionar archivos</h2>
+<div class="drop">
+<strong>PDF · imágenes · TXT · CSV · DOCX</strong>
+<div class="small">El análisis de PDF y DOCX usa el contenido; las imágenes pueden pasar por OCR.</div><br>
+<label class="btn primary" for="files">📂 Elegir archivos</label>
+<input id="files" type="file" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xml,.html,.htm,image/*">
+<div id="status" class="status">Ningún archivo seleccionado.</div><div class="progress"><div id="bar" class="bar"></div></div>
+</div>
+</section>
+
+<section id="results" class="card hidden">
+<h2>2. Revisar propuestas</h2>
+<div class="summary">
+<div class="metric"><b id="count">0</b>archivos</div><div class="metric"><b id="content">0</b>con contenido leído</div>
+<div class="metric"><b id="ready">0</b>propuestas</div><div class="metric"><b id="review">0</b>para revisar</div>
+</div>
+<div class="actions"><button class="primary" onclick="selectAll(true)">☑️ Aprobar seleccionables</button><button class="secondary" onclick="selectAll(false)">☐ Quitar selección</button><button class="secondary" onclick="exportReport()">📋 Exportar informe</button></div>
+<div id="list"></div>
+</section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+<script>
+let deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;document.getElementById('installBtn').classList.remove('hidden');});
+document.getElementById('installBtn').addEventListener('click',async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;document.getElementById('installBtn').classList.add('hidden')});
+window.addEventListener('appinstalled',()=>document.getElementById('installHelp').textContent='✅ Aplicación instalada en el dispositivo.');
+
+const state={items:[]};
+const pdfReady=import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs').then(m=>{window.pdfjsLib=m;window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs'}).catch(()=>null);
+const catRules=[
+['Facturas',/factura|invoice|albaran|recibo|iva|presupuesto/i],
+['Contratos',/contrato|contract|acuerdo|convenio|arrendamiento/i],
+['Expedientes',/expediente|procedimiento|registro|caso|reclamación|reclamacion/i],
+['Trabajo / Protocolos',/protocolo|procedimiento|manual|guia|guía|instrucción|instruccion/i]
+];
+document.getElementById('files').addEventListener('change',async e=>{
+ state.items=[];const fs=[...e.target.files];document.getElementById('results').classList.remove('hidden');
+ for(let i=0;i<fs.length;i++){setProgress(i,fs.length,`Analizando ${fs[i].name}…`);state.items.push(await analyze(fs[i]));render()}
+ setProgress(fs.length,fs.length,`${fs.length} archivo(s) analizado(s).`);render();
+});
+function setProgress(i,n,t){document.getElementById('status').textContent=t;document.getElementById('bar').style.width=(n?i/n*100:0)+'%'}
+async function analyze(f){
+ let text='',method='Nombre/tipo de archivo',warning='';
+ try{
+  if(f.type==='application/pdf'||/\.pdf$/i.test(f.name)){await pdfReady;text=await readPDF(f);method='Extracción de texto PDF';}
+  else if(/\.docx$/i.test(f.name)){text=await readDOCX(f);method='Extracción de texto DOCX';}
+  else if(f.type.startsWith('image/')){text=await readOCR(f);method=text?'OCR de imagen':'OCR no disponible';}
+  else if(f.type.startsWith('text/')||/\.(txt|csv|md|json|xml|html?)$/i.test(f.name)){text=(await f.text()).slice(0,12000);method='Lectura de texto';}
+ }catch(e){warning='No se pudo leer automáticamente el contenido en este navegador.'}
+ const cat=classify(f.name,text,f.type);const confidence=cat==='Revisar'?'Baja':(text.length>80?'Alta':'Media');
+ return {file:f,name:f.name,size:f.size,type:f.type,cat,confidence,proposal:proposed(f,cat,text),destination:'/Organizado IA/'+cat,text,method,warning,selected:cat!=='Revisar'};
+}
+async function readPDF(f){
+ if(!window.pdfjsLib) throw Error('PDF engine');
+ const data=new Uint8Array(await f.arrayBuffer());const pdf=await window.pdfjsLib.getDocument({data}).promise;let out='';
+ const pages=Math.min(pdf.numPages,30);
+ for(let p=1;p<=pages;p++){const page=await pdf.getPage(p);const tc=await page.getTextContent();out+=tc.items.map(x=>x.str).join(' ')+'\\n';if(out.length>12000)break}
+ return out.slice(0,12000);
+}
+async function readDOCX(f){
+ const mammoth=await import('https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm');
+ const r=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()});return r.value.slice(0,12000);
+}
+async function readOCR(f){
+ const T=await import('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/+esm');
+ const r=await T.recognize(f,'spa',{logger:m=>{if(m.progress)document.getElementById('status').textContent='OCR: '+Math.round(m.progress*100)+'%'}});return r.data.text.slice(0,12000);
+}
+function classify(name,text,type){
+ const s=(name+' '+text).toLowerCase();
+ for(const [c,re] of catRules)if(re.test(s))return c;
+ if(type&&type.startsWith('image/'))return 'Imágenes';
+ if(/\b(foto|captura|imagen)\b/i.test(name))return 'Imágenes';
+ return 'Revisar';
+}
+function proposed(f,cat,text){
+ const base=f.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+ const year=(text.match(/\b(20\d{2})\b/)||[])[1]||(base.match(/\b(20\d{2})\b/)||[])[1];
+ const date=(text.match(/\b(\d{1,2}[/-]\d{1,2}[/-]20\d{2})\b/)||[])[1];
+ const clean=base.length>70?base.slice(0,70).trim():base;
+ if(cat==='Revisar')return f.name;
+ return [year,date,clean].filter(Boolean).join(' - ')+f.name.slice(f.name.lastIndexOf('.'));
+}
+function render(){
+ const items=state.items;document.getElementById('count').textContent=items.length;
+ document.getElementById('content').textContent=items.filter(x=>x.text).length;
+ document.getElementById('ready').textContent=items.filter(x=>x.cat!=='Revisar').length;
+ document.getElementById('review').textContent=items.filter(x=>x.cat==='Revisar').length;
+ const list=document.getElementById('list');list.innerHTML='';
+ items.forEach((x,i)=>{const d=document.createElement('div');d.className='item';
+ d.innerHTML=`<div class="actions"><label class="check"><input type="checkbox" ${x.selected?'checked':''} onchange="state.items[${i}].selected=this.checked"> Aprobar propuesta</label><span class="badge">${esc(x.cat)}</span><span class="badge">Confianza: ${x.confidence}</span><span class="badge">${esc(x.method)}</span></div>
+ <p><span class="label">Archivo original</span><br><span class="value">${esc(x.name)}</span></p>
+ <div class="row"><div><span class="label">Nuevo nombre propuesto</span><div class="value">${esc(x.proposal)}</div></div><div><span class="label">Destino propuesto</span><div class="value">${esc(x.destination)}</div></div></div>
+ ${x.warning?`<p class="small">⚠️ ${esc(x.warning)}</p>`:''}${x.text?`<div class="preview"><b>Contenido detectado:</b>\\n${esc(x.text.slice(0,1800))}</div>`:''}`;
+ list.appendChild(d)})
+}
+function selectAll(v){state.items.forEach(x=>x.selected=v);render()}
+function fmt(n){return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB'}
+function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function exportReport(){
+ const lines=['ORGANIZADOR IA V1.2 — INFORME DE ANÁLISIS','MODO SEGURO: no se han realizado modificaciones.',''];
+ state.items.forEach((x,i)=>lines.push(`${i+1}. ${x.name}\n   Categoría: ${x.cat}\n   Nuevo nombre: ${x.proposal}\n   Destino: ${x.destination}\n   Confianza: ${x.confidence}\n   Método: ${x.method}\n   Aprobada para futura ejecución: ${x.selected?'Sí':'No'}\n`));
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\\n')],{type:'text/plain;charset=utf-8'}));a.download='Informe_Organizador_IA_V1_2.txt';a.click();
+}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body></html>
