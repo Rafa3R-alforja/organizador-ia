@@ -2,42 +2,179 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#17324d">
-<link rel="manifest" href="./manifest.webmanifest">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f2937">
 <title>Organizador IA</title>
 <style>
-body{font-family:system-ui;margin:0;background:#f3f6f9;color:#17212b}.app{max-width:900px;margin:auto;padding:18px}
-header,.panel{background:white;border-radius:20px;padding:20px;margin-bottom:16px;box-shadow:0 4px 18px #0001}
-header{background:#17324d;color:white}.actions{display:flex;gap:10px;flex-wrap:wrap}
-button{padding:13px 18px;border:0;border-radius:12px;font-weight:700;font-size:16px;background:#17324d;color:white}
-#files{display:none}.muted{color:#667581}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f4f6;color:#111827}
+header{background:#1f2937;color:white;padding:20px 16px}
+header h1{margin:0 0 5px;font-size:24px}
+header p{margin:0;color:#d1d5db;font-size:14px}
+main{max-width:900px;margin:auto;padding:16px}
+.card{background:white;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 2px 10px rgba(0,0,0,.07)}
+button{border:0;border-radius:12px;padding:13px 16px;font-size:16px;font-weight:600;cursor:pointer}
+.primary{background:#111827;color:white;width:100%}
+.secondary{background:#e5e7eb;color:#111827}
+input[type=file]{display:none}
+.status{margin-top:12px;padding:10px 12px;border-radius:10px;background:#f3f4f6;font-size:14px}
+.empty{text-align:center;color:#6b7280;padding:20px 8px}
+.file{border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:10px}
+.file-top{display:flex;gap:10px;align-items:flex-start}
+.file-icon{font-size:25px;line-height:1}
+.file-name{font-weight:650;word-break:break-word;flex:1}
+.file-meta{font-size:13px;color:#6b7280;margin-top:4px}
+.remove{background:#fee2e2;color:#991b1b;padding:8px 10px;font-size:13px}
+.summary{font-weight:650}
+.actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.actions button{flex:1;min-width:150px}
+.badge{display:inline-block;margin-top:8px;padding:4px 8px;border-radius:999px;background:#e5e7eb;font-size:12px}
 </style>
 </head>
 <body>
-<div class="app">
-<header><h1>Organizador IA</h1><div>Selecciona archivos para analizarlos. Esta versión no modifica ningún archivo.</div><small>V1.3 TEST · selector Android</small></header>
-<section class="panel">
-<div class="actions">
-<button type="button" id="selectFiles">📂 Seleccionar archivos</button>
-<input id="files" type="file" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xml,.html,.htm,image/*">
-</div>
-<p id="status" class="muted">Pulsa el botón para seleccionar uno o varios archivos.</p>
-</section>
-</div>
+<header>
+  <h1>📁 Organizador IA</h1>
+  <p>Preparación y revisión segura de documentos</p>
+</header>
+
+<main>
+  <section class="card">
+    <button id="selectFiles" class="primary" type="button">📂 Seleccionar archivos</button>
+    <input id="files" type="file" multiple>
+    <div id="status" class="status">No se ha seleccionado ningún archivo.</div>
+  </section>
+
+  <section class="card">
+    <div class="summary" id="summary">Archivos seleccionados: 0</div>
+    <div id="fileList" class="empty">Aquí aparecerán los archivos seleccionados.</div>
+    <div class="actions">
+      <button id="clearFiles" class="secondary" type="button">🗑️ Vaciar lista</button>
+    </div>
+  </section>
+</main>
+
 <script>
 (function(){
 "use strict";
+
 var input=document.getElementById("files");
 var button=document.getElementById("selectFiles");
 var status=document.getElementById("status");
+var list=document.getElementById("fileList");
+var summary=document.getElementById("summary");
+var clear=document.getElementById("clearFiles");
+
+var selected=[];
+
+function formatSize(bytes){
+  if(bytes < 1024) return bytes + " B";
+  if(bytes < 1024*1024) return (bytes/1024).toFixed(1) + " KB";
+  if(bytes < 1024*1024*1024) return (bytes/(1024*1024)).toFixed(1) + " MB";
+  return (bytes/(1024*1024*1024)).toFixed(1) + " GB";
+}
+
+function iconFor(type,name){
+  var n=name.toLowerCase();
+  if(type.indexOf("pdf")>=0 || n.endsWith(".pdf")) return "📕";
+  if(type.indexOf("image")===0 || /\.(jpg|jpeg|png|gif|webp|bmp|tiff?)$/i.test(n)) return "🖼️";
+  if(type.indexOf("word")>=0 || /\.(doc|docx)$/i.test(n)) return "📘";
+  if(type.indexOf("sheet")>=0 || /\.(xls|xlsx|csv)$/i.test(n)) return "📊";
+  if(type.indexOf("text")===0 || /\.(txt|md|json|xml|html?)$/i.test(n)) return "📄";
+  return "📎";
+}
+
+function render(){
+  summary.textContent="Archivos seleccionados: " + selected.length;
+
+  if(!selected.length){
+    list.className="empty";
+    list.textContent="Aquí aparecerán los archivos seleccionados.";
+    return;
+  }
+
+  list.className="";
+  list.innerHTML="";
+
+  selected.forEach(function(file,index){
+    var row=document.createElement("div");
+    row.className="file";
+
+    var top=document.createElement("div");
+    top.className="file-top";
+
+    var ico=document.createElement("div");
+    ico.className="file-icon";
+    ico.textContent=iconFor(file.type,file.name);
+
+    var info=document.createElement("div");
+    info.style.flex="1";
+
+    var name=document.createElement("div");
+    name.className="file-name";
+    name.textContent=file.name;
+
+    var meta=document.createElement("div");
+    meta.className="file-meta";
+    meta.textContent=(file.type || "Tipo no identificado") + " · " + formatSize(file.size);
+
+    var badge=document.createElement("div");
+    badge.className="badge";
+    badge.textContent="Pendiente de análisis";
+
+    info.appendChild(name);
+    info.appendChild(meta);
+    info.appendChild(badge);
+
+    var remove=document.createElement("button");
+    remove.className="remove";
+    remove.type="button";
+    remove.textContent="✕ Quitar";
+    remove.addEventListener("click",function(){
+      selected.splice(index,1);
+      render();
+      status.textContent=selected.length
+        ? ("Seleccionados: " + selected.length + " archivo(s).")
+        : "No se ha seleccionado ningún archivo.";
+    });
+
+    top.appendChild(ico);
+    top.appendChild(info);
+    top.appendChild(remove);
+    row.appendChild(top);
+    list.appendChild(row);
+  });
+}
+
 button.addEventListener("click",function(){
   input.click();
 });
+
 input.addEventListener("change",function(){
-  var n=input.files ? input.files.length : 0;
-  status.textContent=n ? ("Seleccionados: "+n+" archivo(s).") : "No se ha seleccionado ningún archivo.";
+  var incoming=input.files ? Array.prototype.slice.call(input.files) : [];
+
+  incoming.forEach(function(file){
+    var exists=selected.some(function(old){
+      return old.name===file.name && old.size===file.size && old.lastModified===file.lastModified;
+    });
+    if(!exists) selected.push(file);
+  });
+
+  input.value="";
+  status.textContent=selected.length
+    ? ("Seleccionados: " + selected.length + " archivo(s).")
+    : "No se ha seleccionado ningún archivo.";
+  render();
 });
+
+clear.addEventListener("click",function(){
+  selected=[];
+  input.value="";
+  status.textContent="No se ha seleccionado ningún archivo.";
+  render();
+});
+
+render();
+
 })();
 </script>
 </body>
