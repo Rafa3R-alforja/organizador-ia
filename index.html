@@ -1,35 +1,44 @@
-<!doctype html><html lang="es"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#17324d"><link rel="manifest" href="./manifest.webmanifest">
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#17324d">
+<link rel="manifest" href="./manifest.webmanifest">
 <title>Organizador IA</title>
 <style>
-body{font-family:system-ui;margin:0;background:#f3f6f9;color:#17212b}.app{max-width:1000px;margin:auto;padding:18px}
-header,.panel{background:white;border-radius:20px;padding:18px;margin-bottom:16px;box-shadow:0 4px 18px #0001}
-header{background:#17324d;color:white}h1{margin:0 0 5px}.sub{opacity:.85}.version{font-size:12px;opacity:.7;margin-top:8px}
-button,.pick{padding:11px 15px;border:0;border-radius:12px;font-weight:bold;cursor:pointer}.primary{background:#17324d;color:white}.secondary{background:#e7eef5;color:#17324d}
-input[type=file]{display:none}.actions{display:flex;gap:10px;flex-wrap:wrap}.progress{height:8px;background:#e6ebef;border-radius:9px;margin-top:10px}.bar{height:100%;width:0;background:#4b87b9}
-.card{border:1px solid #dce5ec;border-radius:15px;padding:14px;margin-top:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
-label{font-size:12px;font-weight:bold;color:#53616d}input[type=text]{width:100%;padding:9px;border:1px solid #ccd7df;border-radius:9px}
-.badge{display:inline-block;background:#eaf2f8;border-radius:20px;padding:5px 9px;font-size:12px;font-weight:bold}.explain,.preview{background:#f7f9fb;padding:10px;border-radius:10px;margin-top:10px;font-size:13px}.preview{white-space:pre-wrap;max-height:160px;overflow:auto}
-.muted{color:#667581}.hidden{display:none}
-</style></head><body><div class="app">
-<header><h1>Organizador IA</h1><div class="sub">Analiza archivos y propone cómo organizarlos. Nunca modifica tus archivos sin tu aprobación.</div><div class="version">V1.3 · OCR automático para PDF escaneado</div></header>
-<section class="panel"><div class="actions"><button type="button" id="selectFiles" class="primary">📂 Seleccionar archivos</button><input id="files" type="file" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xml,.html,.htm,image/*"><button id="analyze" class="secondary">Analizar seleccionados</button><button id="report" class="secondary">Exportar informe</button></div><div id="status" class="muted" style="margin-top:12px">Selecciona uno o varios archivos.</div><div class="progress"><div id="bar" class="bar"></div></div></section>
-<section id="results" class="panel hidden"><h2>Resultados</h2><div id="cards"></div></section></div>
-<script type="module">
-const PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';let pdfjs,mammoth,Tesseract,selected=[],results=[];
-const $=x=>document.getElementById(x);const clean=s=>(s||'').replace(/\s+/g,' ').trim();const norm=s=>clean(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-function setStatus(t,p){$('status').textContent=t;if(p!=null)$('bar').style.width=p+'%'}
-function ext(n){return(n.split('.').pop()||'').toLowerCase()}
-function dates(s){return[...s.matchAll(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/g)].slice(0,3).map(m=>`${m[3].length==2?'20'+m[3]:m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`)}
-function exp(s){let m=s.match(/(?:exp(?:ediente)?\.?|expte\.?)\s*[:#º\-]?\s*([A-Z0-9][A-Z0-9\/.\-]{2,})/i);return m?m[1]:''}
-function classify(name,text){let n=norm(name+' '+text),rules=[['Facturas',['factura','base imponible','iva','importe total','proveedor']],['Contratos',['contrato','contratacion','adjudicatario','clausula']],['Expedientes',['expediente','expte','tramite','resolucion','solicitud','registro de entrada']],['Trabajo / Protocolos',['protocolo','procedimiento','instruccion','manual','seguimiento']],['Imágenes',['fotografia','imagen','captura']]],best=['Revisar',0,[]];for(let [c,w] of rules){let h=w.filter(x=>n.includes(x));if(h.length>best[1])best=[c,h.length,h]}return{category:best[0],hits:best[2],confidence:best[1]?Math.min(96,45+best[1]*12):28}}
-async function libs(){pdfjs??=await import(PDFJS);mammoth??=await import('https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm');Tesseract??=await import('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/+esm')}
-async function readPdf(f,idx,total){let pdf=await pdfjs.getDocument({data:await f.arrayBuffer()}).promise,max=Math.min(pdf.numPages,30),text='';for(let p=1;p<=max;p++){let page=await pdf.getPage(p),c=await page.getTextContent();text+=' '+c.items.map(x=>x.str).join(' ');setStatus(`PDF: extrayendo texto · página ${p}/${max}`,((idx+.2*p/max)/total)*100)}if(clean(text).length>=80)return{text,method:`texto PDF (${max} páginas)`};text='';for(let p=1;p<=max;p++){let page=await pdf.getPage(p),v=page.getViewport({scale:1.45}),cv=document.createElement('canvas');cv.width=Math.ceil(v.width);cv.height=Math.ceil(v.height);await page.render({canvasContext:cv.getContext('2d'),viewport:v}).promise;setStatus(`PDF escaneado: OCR · página ${p}/${max}`,((idx+.2*p/max)/total)*100);let r=await Tesseract.recognize(cv,'spa');text+=' '+(r.data.text||'')}return{text,method:`OCR automático (${max} páginas)`}}
-async function read(f,idx,total){let e=ext(f.name);if(e=='pdf')return readPdf(f,idx,total);if(e=='docx'){let r=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()});return{text:r.value||'',method:'texto DOCX'}}if(['txt','csv','md','json','xml','html','htm'].includes(e))return{text:await f.text(),method:'lectura directa'}if(f.type.startsWith('image/')){setStatus(`OCR de imagen · ${f.name}`);let r=await Tesseract.recognize(f,'spa');return{text:r.data.text||'',method:'OCR de imagen'}}return{text:'',method:'sin extracción'}}
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function render(){$('results').classList.remove('hidden');$('cards').innerHTML=results.map((r,i)=>`<div class="card"><span class="badge">${esc(r.category)}</span> <span class="badge">${r.confidence}% confianza</span> <span class="muted">${esc(r.method)}</span><h3>${esc(r.file.name)}</h3><div class="grid"><div><label>Categoría propuesta</label><input type="text" data-i="${i}" data-k="category" value="${esc(r.category)}"></div><div><label>Nombre propuesto</label><input type="text" data-i="${i}" data-k="name" value="${esc(r.name)}"></div><div><label>Destino propuesto</label><input type="text" data-i="${i}" data-k="destination" value="${esc(r.destination)}"></div></div><div class="explain"><b>Por qué:</b> ${esc(r.explanation)}</div>${r.text?`<details><summary>Vista previa</summary><div class="preview">${esc(r.text.slice(0,1800))}</div></details>`:''}<div class="actions" style="margin-top:10px"><button class="primary approve" data-i="${i}">✓ Aprobar propuesta</button><button class="secondary ignore" data-i="${i}">Ignorar</button></div></div>`).join('');document.querySelectorAll('input[data-i]').forEach(x=>x.oninput=()=>results[+x.dataset.i][x.dataset.k]=x.value);document.querySelectorAll('.approve').forEach(b=>b.onclick=()=>{results[+b.dataset.i].decision='APROBADA';b.textContent='✓ Aprobada (archivo sin modificar)';b.disabled=true});document.querySelectorAll('.ignore').forEach(b=>b.onclick=()=>{results[+b.dataset.i].decision='IGNORADA';b.textContent='Ignorada';b.disabled=true})}
-$('selectFiles').addEventListener('click',()=>{$('files').click()}); $('files').onchange=e=>{selected=[...e.target.files];setStatus(`${selected.length} archivo(s) seleccionado(s). Pulsa “Analizar seleccionados”.`)}
-$('analyze').onclick=async()=>{if(!selected.length)return setStatus('Primero selecciona archivos.');results=[];try{await libs()}catch(e){return setStatus('Necesitas conexión a Internet para cargar las librerías de análisis.')}for(let i=0;i<selected.length;i++){let f=selected[i];try{let d=await read(f,i,selected.length),c=classify(f.name,d.text),ex=exp(d.text),first=clean(d.text).slice(0,70).replace(/[<>:"/\\|?*]/g,''),name=[dates(d.text)[0],c.category,ex?'Exp. '+ex:'',first].filter(Boolean).join(' - ')+'.'+ext(f.name);results.push({file:f,name:name.slice(0,150),category:c.category,destination:ex?`${c.category}/Expediente ${ex}`:c.category,confidence:c.confidence,method:d.method,text:d.text,decision:'',explanation:c.hits.length?`Se han detectado términos relacionados: ${c.hits.join(', ')}.`:`No hay indicios suficientes; se propone Revisar.`});render()}catch(e){results.push({file:f,name:f.name,category:'Revisar',destination:'Revisar',confidence:0,method:'error de lectura',text:'',decision:'',explanation:'No se ha podido leer este archivo automáticamente. No se ha realizado ningún cambio.'});render()}}setStatus(`Análisis terminado. Nada ha sido movido, renombrado ni eliminado.`,100)}
-$('report').onclick=()=>{if(!results.length)return;let s=['INFORME ORGANIZADOR IA V1.3','Fecha: '+new Date().toLocaleString('es-ES'),'','Las propuestas no modifican archivos.',''];results.forEach((r,i)=>s.push(`${i+1}. ${r.file.name}\n   Categoría: ${r.category}\n   Nombre: ${r.name}\n   Destino: ${r.destination}\n   Confianza: ${r.confidence}%\n   Método: ${r.method}\n   Decisión: ${r.decision||'pendiente'}\n   Motivo: ${r.explanation}\n`));let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([s.join('\n')],{type:'text/plain'}));a.download='informe_organizador_ia.txt';a.click()}
-</script></body></html>
+body{font-family:system-ui;margin:0;background:#f3f6f9;color:#17212b}.app{max-width:900px;margin:auto;padding:18px}
+header,.panel{background:white;border-radius:20px;padding:20px;margin-bottom:16px;box-shadow:0 4px 18px #0001}
+header{background:#17324d;color:white}.actions{display:flex;gap:10px;flex-wrap:wrap}
+button{padding:13px 18px;border:0;border-radius:12px;font-weight:700;font-size:16px;background:#17324d;color:white}
+#files{display:none}.muted{color:#667581}
+</style>
+</head>
+<body>
+<div class="app">
+<header><h1>Organizador IA</h1><div>Selecciona archivos para analizarlos. Esta versión no modifica ningún archivo.</div><small>V1.3 TEST · selector Android</small></header>
+<section class="panel">
+<div class="actions">
+<button type="button" id="selectFiles">📂 Seleccionar archivos</button>
+<input id="files" type="file" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xml,.html,.htm,image/*">
+</div>
+<p id="status" class="muted">Pulsa el botón para seleccionar uno o varios archivos.</p>
+</section>
+</div>
+<script>
+(function(){
+"use strict";
+var input=document.getElementById("files");
+var button=document.getElementById("selectFiles");
+var status=document.getElementById("status");
+button.addEventListener("click",function(){
+  input.click();
+});
+input.addEventListener("change",function(){
+  var n=input.files ? input.files.length : 0;
+  status.textContent=n ? ("Seleccionados: "+n+" archivo(s).") : "No se ha seleccionado ningún archivo.";
+});
+})();
+</script>
+</body>
+</html>
