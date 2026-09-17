@@ -8,17 +8,17 @@
 <style>
 body{margin:0;font-family:system-ui,sans-serif;background:#f3f4f6;color:#111827}
 header{background:#1f2937;color:#fff;padding:20px 16px}h1{margin:0 0 5px;font-size:24px}header p{margin:0;color:#d1d5db}
-main{max-width:850px;margin:auto;padding:16px}.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 2px 10px #0001}
-button{border:0;border-radius:12px;padding:13px 16px;font-size:16px;font-weight:600}.primary{background:#111827;color:#fff;width:100%}
-input[type=file]{display:none}.status{margin-top:12px;padding:10px;background:#f3f4f6;border-radius:10px}
-.file{border:1px solid #ddd;border-radius:12px;padding:12px;margin-top:10px}.name{font-weight:700;word-break:break-word}
-.meta{font-size:13px;color:#666;margin-top:5px}.remove{margin-top:10px;background:#fee2e2;color:#991b1b;padding:8px 10px;font-size:13px}
-.empty{text-align:center;color:#666;padding:20px}
-.preview{margin-top:10px;background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;font-size:13px}
+main{max-width:900px;margin:auto;padding:16px}.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 2px 10px #0001}
+button{border:0;border-radius:12px;padding:12px 15px;font-size:15px;font-weight:600;cursor:pointer}.primary{background:#111827;color:#fff;width:100%}.secondary{background:#e5e7eb;color:#111827}
+input[type=file]{display:none}.status{margin-top:12px;padding:10px;background:#f3f4f6;border-radius:10px;font-size:14px}
+.file{border:1px solid #ddd;border-radius:12px;padding:12px;margin-top:10px}.name{font-weight:700;word-break:break-word}.meta{font-size:13px;color:#666;margin-top:5px}
+.remove{margin-top:10px;background:#fee2e2;color:#991b1b;padding:8px 10px;font-size:13px}.empty{text-align:center;color:#666;padding:20px}
+.preview{margin-top:10px;background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;font-size:13px}
+.ok{background:#f0fdf4;color:#166534}.warn{background:#fffbeb;color:#92400e}.error{background:#fef2f2;color:#991b1b}
 </style>
 </head>
 <body>
-<header><h1>📁 Organizador IA</h1><p>Prueba estable de selección y lectura</p></header>
+<header><h1>📁 Organizador IA</h1><p>Lectura y revisión segura de documentos</p></header>
 <main>
 <div class="card">
 <button id="selectFiles" class="primary" type="button">📂 Seleccionar archivos</button>
@@ -33,15 +33,33 @@ input[type=file]{display:none}.status{margin-top:12px;padding:10px;background:#f
 <script>
 (function(){
 "use strict";
-var input=document.getElementById("files");
-var button=document.getElementById("selectFiles");
-var status=document.getElementById("status");
-var list=document.getElementById("fileList");
-var summary=document.getElementById("summary");
-var selected=[];
+var input=document.getElementById("files"),button=document.getElementById("selectFiles"),
+status=document.getElementById("status"),list=document.getElementById("fileList"),
+summary=document.getElementById("summary"),selected=[];
 
 function size(n){if(n<1024)return n+" B";if(n<1048576)return(n/1024).toFixed(1)+" KB";return(n/1048576).toFixed(1)+" MB";}
-
+function textType(file){return /^(text\/|application\/json|application\/xml)/i.test(file.type)||/\.(txt|md|csv|json|xml|html?|log)$/i.test(file.name);}
+function readText(file,preview,badge){
+ badge.className="status warn";badge.textContent="Leyendo contenido…";
+ var r=new FileReader();
+ r.onload=function(){
+  var t=String(r.result||"");
+  preview.textContent=t ? t.slice(0,8000)+(t.length>8000?"\n\n… (vista previa limitada a 8.000 caracteres)":"") : "El archivo está vacío o no contiene texto.";
+  badge.className=t?"status ok":"status warn";
+  badge.textContent=t?"✓ Texto leído: "+t.length.toLocaleString("es-ES")+" caracteres":"⚠ Sin texto detectable";
+ };
+ r.onerror=function(){preview.textContent="No se ha podido leer el archivo.";badge.className="status error";badge.textContent="✕ Error de lectura";};
+ r.readAsText(file,"UTF-8");
+}
+function readPdf(file,preview,badge){
+ badge.className="status warn";badge.textContent="PDF detectado";
+ preview.textContent="En esta versión el PDF se identifica correctamente, pero la extracción avanzada de texto se incorporará en el siguiente paso.";
+}
+function readContent(file,preview,badge){
+ if(textType(file)) readText(file,preview,badge);
+ else if(/pdf/i.test(file.type)||/\.pdf$/i.test(file.name)) readPdf(file,preview,badge);
+ else {preview.textContent="Tipo de archivo reconocido, pero su lector se añadirá en un siguiente paso.";badge.className="status warn";badge.textContent="⚠ Lector pendiente";}
+}
 function render(){
  summary.textContent="Archivos seleccionados: "+selected.length;
  if(!selected.length){list.className="empty";list.textContent="Aquí aparecerán los archivos seleccionados.";return;}
@@ -49,30 +67,25 @@ function render(){
  selected.forEach(function(file,index){
   var box=document.createElement("div");box.className="file";
   var name=document.createElement("div");name.className="name";name.textContent="📄 "+file.name;
-  var meta=document.createElement("div");meta.className="meta";
-  meta.textContent="Tipo: "+(file.type||"desconocido")+" · Tamaño: "+size(file.size);
-  var preview=document.createElement("div");preview.className="preview";preview.textContent="Contenido todavía no leído.";
+  var meta=document.createElement("div");meta.className="meta";meta.textContent="Tipo: "+(file.type||"desconocido")+" · Tamaño: "+size(file.size);
+  var badge=document.createElement("div");badge.className="status";badge.textContent="Pendiente de lectura";
+  var preview=document.createElement("div");preview.className="preview";preview.textContent="Pulsa «Leer contenido» para analizar este archivo.";
+  var read=document.createElement("button");read.className="secondary";read.type="button";read.textContent="🔎 Leer contenido";read.style.marginTop="10px";
+  read.onclick=function(){readContent(file,preview,badge);};
   var remove=document.createElement("button");remove.className="remove";remove.type="button";remove.textContent="✕ Quitar";
   remove.onclick=function(){selected.splice(index,1);render();};
-  box.appendChild(name);box.appendChild(meta);box.appendChild(preview);box.appendChild(remove);
+  box.appendChild(name);box.appendChild(meta);box.appendChild(badge);box.appendChild(preview);box.appendChild(read);box.appendChild(remove);
   list.appendChild(box);
  });
 }
-
 button.addEventListener("click",function(){input.click();});
-
 input.addEventListener("change",function(){
  var files=input.files;
  status.textContent="Evento recibido. Archivos detectados: "+(files?files.length:0);
- if(files){
-  for(var i=0;i<files.length;i++){selected.push(files[i]);}
- }
- input.value="";
- render();
+ if(files)for(var i=0;i<files.length;i++)selected.push(files[i]);
+ input.value="";render();
 });
-
 render();
 })();
 </script>
-</body>
-</html>
+</body></html>
