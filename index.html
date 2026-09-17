@@ -4,100 +4,79 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#1f2937">
-<title>Organizador IA - Prueba TXT</title>
+<title>Organizador IA - Prueba PDF</title>
 <style>
 body{margin:0;font-family:system-ui,sans-serif;background:#f3f4f6;color:#111827}
 header{background:#1f2937;color:#fff;padding:20px 16px}h1{margin:0 0 5px;font-size:24px}header p{margin:0;color:#d1d5db}
-main{max-width:800px;margin:auto;padding:16px}.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 2px 10px #0001}
+main{max-width:850px;margin:auto;padding:16px}.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 2px 10px #0001}
 button{border:0;border-radius:12px;padding:13px 16px;font-size:16px;font-weight:600;cursor:pointer}.primary{background:#111827;color:#fff;width:100%}
-input[type=file]{display:none}.status{margin-top:12px;padding:10px;border-radius:10px;background:#f3f4f6;font-size:14px}
+input[type=file]{display:none}.status{margin-top:12px;padding:10px;border-radius:10px;background:#f3f4f6;font-size:14px}.ok{background:#f0fdf4;color:#166534}.error{background:#fef2f2;color:#991b1b}.warn{background:#fffbeb;color:#92400e}
 .file{border:1px solid #ddd;border-radius:12px;padding:12px;margin-top:10px}.name{font-weight:700;word-break:break-word}.meta{font-size:13px;color:#666;margin-top:5px}
-.preview{margin-top:12px;background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:12px;white-space:pre-wrap;word-break:break-word;min-height:80px}
-.read{margin-top:12px;background:#e5e7eb;color:#111827}.ok{background:#f0fdf4;color:#166534}.error{background:#fef2f2;color:#991b1b}
+.preview{margin-top:12px;background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:12px;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;font-size:13px}
 </style>
 </head>
 <body>
-<header><h1>📁 Organizador IA</h1><p>Prueba de lectura de archivos TXT</p></header>
+<header><h1>📁 Organizador IA</h1><p>Prueba de extracción de texto PDF</p></header>
 <main>
 <div class="card">
-<button id="selectFiles" class="primary" type="button">📂 Seleccionar archivo TXT</button>
-<input id="files" type="file" accept=".txt,text/plain">
-<div id="status" class="status">Selecciona un archivo .txt</div>
+<button id="selectFiles" class="primary" type="button">📂 Seleccionar PDF</button>
+<input id="files" type="file" accept=".pdf,application/pdf">
+<div id="status" class="status">Selecciona un PDF con texto.</div>
 </div>
-<div class="card">
-<div id="result">Todavía no hay ningún archivo.</div>
-</div>
+<div class="card"><div id="result">Todavía no hay ningún PDF.</div></div>
 </main>
-<script>
-(function(){
-"use strict";
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+<script type="module">
+const input=document.getElementById("files");
+const button=document.getElementById("selectFiles");
+const status=document.getElementById("status");
+const result=document.getElementById("result");
 
-var input=document.getElementById("files");
-var button=document.getElementById("selectFiles");
-var status=document.getElementById("status");
-var result=document.getElementById("result");
+button.addEventListener("click",()=>input.click());
 
-button.addEventListener("click",function(){
-  input.click();
-});
-
-input.addEventListener("change",function(){
-  if(!input.files || input.files.length===0){
-    status.textContent="No se seleccionó ningún archivo.";
-    return;
+input.addEventListener("change",async()=>{
+  if(!input.files || !input.files.length){
+    status.textContent="No se seleccionó ningún archivo."; return;
   }
-
-  var file=input.files[0];
-
+  const file=input.files[0];
   result.innerHTML="";
+  const box=document.createElement("div"); box.className="file";
+  const name=document.createElement("div"); name.className="name"; name.textContent="📕 "+file.name;
+  const meta=document.createElement("div"); meta.className="meta"; meta.textContent="Tamaño: "+(file.size/1024).toFixed(1)+" KB";
+  const preview=document.createElement("div"); preview.className="preview"; preview.textContent="Iniciando extracción…";
+  box.append(name,meta,preview); result.appendChild(box);
+  status.className="status warn"; status.textContent="Leyendo PDF…";
 
-  var box=document.createElement("div");
-  box.className="file";
-
-  var name=document.createElement("div");
-  name.className="name";
-  name.textContent="📄 "+file.name;
-
-  var meta=document.createElement("div");
-  meta.className="meta";
-  meta.textContent="Tipo: "+(file.type||"text/plain")+" · Tamaño: "+file.size+" bytes";
-
-  var preview=document.createElement("div");
-  preview.className="preview";
-  preview.textContent="Leyendo archivo…";
-
-  box.appendChild(name);
-  box.appendChild(meta);
-  box.appendChild(preview);
-  result.appendChild(box);
-
-  status.textContent="Archivo recibido correctamente. Intentando leerlo…";
-
-  var reader=new FileReader();
-
-  reader.onload=function(event){
-    var text=event.target.result;
-
-    if(typeof text!=="string"){
-      text=String(text);
+  try{
+    const pdfjs=await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs");
+    const data=new Uint8Array(await file.arrayBuffer());
+    const pdf=await pdfjs.getDocument({data}).promise;
+    let full="";
+    const max=Math.min(pdf.numPages,30);
+    for(let pageNo=1;pageNo<=max;pageNo++){
+      status.textContent="Leyendo página "+pageNo+" de "+max+"…";
+      const page=await pdf.getPage(pageNo);
+      const content=await page.getTextContent();
+      const text=content.items.map(x=>x.str||"").join(" ");
+      full+="\n\n--- Página "+pageNo+" ---\n"+text;
     }
-
-    preview.textContent=text || "(El archivo está vacío)";
-    preview.className="preview ok";
-
-    status.textContent="✓ Lectura completada. Caracteres encontrados: "+text.length;
-  };
-
-  reader.onerror=function(){
-    preview.textContent="ERROR: el navegador no ha podido leer el contenido del archivo.";
-    preview.className="preview error";
-    status.textContent="✕ Error de lectura";
-  };
-
-  reader.readAsText(file);
+    full=full.trim();
+    if(full){
+      preview.textContent=full.slice(0,12000)+(full.length>12000?"\n\n… (vista previa limitada)":"");
+      preview.className="preview";
+      status.className="status ok";
+      status.textContent="✓ PDF leído. Páginas procesadas: "+max+" · Caracteres encontrados: "+full.length.toLocaleString("es-ES");
+    }else{
+      preview.textContent="El PDF se ha abierto correctamente, pero no contiene texto extraíble. Probablemente sea un PDF escaneado o basado en imágenes.";
+      status.className="status warn";
+      status.textContent="⚠ PDF sin texto extraíble";
+    }
+  }catch(err){
+    preview.textContent="No se ha podido extraer el texto de este PDF.\n\nDetalle técnico: "+(err&&err.message?err.message:String(err));
+    status.className="status error";
+    status.textContent="✕ Error al leer el PDF";
+  }
 });
-
-})();
 </script>
 </body>
 </html>
