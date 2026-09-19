@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173b7a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Organizador IA V1.3.2</title>
+<title>Organizador IA V1.4</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f6fb;color:#17202a}
 header{background:#173b7a;color:white;padding:18px 16px;position:sticky;top:0;z-index:5}
@@ -23,7 +23,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 </style>
 </head>
 <body>
-<header><h1>📂 Organizador IA V1.3.2</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
+<header><h1>📂 Organizador IA V1.4</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
 <main>
 <div class="card">
 <div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
@@ -34,18 +34,49 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <button id="analyze" disabled>🔎 Analizar</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
 <button id="report" class="secondary" disabled>📋 Exportar informe</button>
+<button id="categoriesBtn" class="secondary" type="button">⚙️ Categorías</button>
 </div>
 <div id="selection" class="small">Ningún archivo seleccionado.</div>
 </div>
+<div id="categoriesPanel" class="card hidden">
+<h2 style="margin-top:0">⚙️ Categorías de clasificación</h2>
+<p class="small">Las categorías incorporadas vienen de serie. Puedes añadir tus propias categorías y palabras clave; se guardan en este dispositivo y se usan en los siguientes análisis.</p>
+<div id="categoryList"></div>
+<div class="grid">
+<div class="field"><div class="label">Nueva categoría</div><input id="newCat" placeholder="Ej.: Seguros" style="width:100%;padding:9px"></div>
+<div class="field"><div class="label">Palabras clave</div><input id="newKeywords" placeholder="seguro, póliza, siniestro" style="width:100%;padding:9px"></div>
+<div class="field"><div class="label">Explicación</div><input id="newWhy" placeholder="Documento relacionado con seguros." style="width:100%;padding:9px"></div>
+</div>
+<div class="actions"><button id="addCategory" type="button">➕ Añadir categoría</button><button id="resetCategories" class="secondary" type="button">↺ Restaurar categorías añadidas</button></div>
+</div>
 <div id="results"></div>
+</div>
 </main>
 
 <script>
 const $=id=>document.getElementById(id);
-const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results");
+const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
 const selectBtn=$("selectBtn");
 selectBtn.addEventListener("click",()=>filesInput.click());
 let files=[], analyses=[];
+const BUILTIN_RULES=[
+ ["Vehículos / Tráfico",["airbag","cambio de airbag","sustitución de airbag","sustitucion de airbag","campaña airbag","campana airbag","aviso cambio airbag"],"Contiene referencias a un aviso o campaña relacionada con airbags o vehículos."],
+ ["Facturas",["factura","base imponible","iva","importe total","proveedor","precio abonado","pago realizado"],"Documento económico o factura."],
+ ["Contratos",["contrato","contratación","adjudicatario","cláusula","clausula"],"Contiene terminología contractual."],
+ ["Expedientes",["expediente","expte","resolución","resolucion","registro de entrada"],"Contiene referencias directas a un expediente."],
+ ["Citas / Trámites",["cita previa","cita confirmada","localizador","itv","centro de inspección","centro de inspeccion"],"Contiene datos de una cita o trámite."],
+ ["Trabajo / Protocolos",["protocolo","procedimiento","instrucción","instruccion","manual","seguimiento"],"Contiene terminología de trabajo, protocolo o procedimiento."],
+ ["Imágenes",["imagen","fotografía","fotografia","captura","screenshot"],"Archivo de imagen o contenido visual."]
+];
+function getCustomCategories(){try{return JSON.parse(localStorage.getItem("organizadorIA_customCategories")||"[]")}catch(e){return []}}
+function saveCustomCategories(v){localStorage.setItem("organizadorIA_customCategories",JSON.stringify(v))}
+function renderCategories(){const custom=getCustomCategories();categoryList.innerHTML=''; if(!custom.length){categoryList.innerHTML='<p class="small">No hay categorías añadidas por el usuario.</p>';return;} custom.forEach((c,i)=>{const d=document.createElement('div');d.className='field';d.style.marginBottom='8px';d.innerHTML='<b>'+esc(c.name)+'</b><div class="small">Palabras: '+esc(c.keywords.join(', '))+'</div><div class="small">'+esc(c.why)+'</div><button class="danger" style="margin-top:7px;padding:8px 10px" onclick="removeCustomCategory('+i+')">Eliminar</button>';categoryList.appendChild(d)})}
+window.removeCustomCategory=function(i){const a=getCustomCategories();a.splice(i,1);saveCustomCategories(a);renderCategories()}
+categoriesBtn.addEventListener("click",()=>categoriesPanel.classList.toggle("hidden"));
+addCategoryBtn.addEventListener("click",()=>{const name=$("newCat").value.trim(),keywords=$("newKeywords").value.split(",").map(x=>x.trim().toLowerCase()).filter(Boolean),why=$("newWhy").value.trim()||("Documento clasificado como "+name+"."); if(!name||!keywords.length){alert("Indica el nombre de la categoría y al menos una palabra clave.");return;} const a=getCustomCategories(); if(a.some(x=>x.name.toLowerCase()===name.toLowerCase())){alert("Esa categoría ya existe.");return;} a.push({name,keywords,why});saveCustomCategories(a);$("newCat").value=$("newKeywords").value=$("newWhy").value="";renderCategories()});
+resetCategoriesBtn.addEventListener("click",()=>{if(confirm("¿Eliminar todas las categorías añadidas por ti? Las categorías incorporadas no se borrarán.")){localStorage.removeItem("organizadorIA_customCategories");renderCategories()}});
+renderCategories();
+
 selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
 
 filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; renderSelection();});
@@ -65,25 +96,10 @@ function dateText(s){let m=s.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b|\b
 function expediente(s){let m=s.match(/\b(?:exp(?:ediente)?|expte)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9\/.-]{2,})/i);return m?m[1]:"";}
 function classify(text,name){
  const s=(name+" "+text).toLowerCase();
- const rules=[
-  ["Vehículos / Tráfico",[
-   "airbag","cambio de airbag","sustitución de airbag","sustitucion de airbag",
-   "campaña airbag","campana airbag","aviso cambio airbag"
-  ],"Contiene referencias a un aviso o campaña relacionada con airbags o vehículos."],
-  ["Facturas",["factura","base imponible","iva","importe total","proveedor","precio abonado","pago realizado"],"Documento económico o factura."],
-  ["Contratos",["contrato","contratación","adjudicatario","cláusula","clausula"],"Contiene terminología contractual."],
-  ["Expedientes",["expediente","expte","resolución","resolucion","registro de entrada"],"Contiene referencias directas a un expediente."],
-  ["Citas / Trámites",["cita previa","cita confirmada","localizador","itv","centro de inspección","centro de inspeccion"],"Contiene datos de una cita o trámite."],
-  ["Trabajo / Protocolos",["protocolo","procedimiento","instrucción","instruccion","manual","seguimiento"],"Contiene terminología de trabajo, protocolo o procedimiento."],
-  ["Imágenes",["imagen","fotografía","fotografia","captura","screenshot"],"Archivo de imagen o contenido visual."]
- ];
+ const rules=[...BUILTIN_RULES,...getCustomCategories().map(c=>[c.name,c.keywords,c.why])];
  let best=null;
- for(const [cat,words,why] of rules){
-   let hits=words.filter(w=>s.includes(w));
-   if(hits.length&&(!best||hits.length>best.hits))best={cat,hits:hits.length,why,words:hits};
- }
- if(!best&&/solicitud/.test(s)&&/expediente|registro de entrada|resolución|resolucion|trámite|tramite/.test(s))
-   best={cat:"Expedientes",hits:1,why:"La solicitud aparece vinculada a un expediente o trámite.",words:["solicitud"]};
+ for(const [cat,words,why] of rules){let hits=words.filter(w=>s.includes(w)); if(hits.length&&(!best||hits.length>best.hits))best={cat,hits:hits.length,why,words:hits};}
+ if(!best&&/solicitud/.test(s)&&/expediente|registro de entrada|resolución|resolucion|trámite|tramite/.test(s))best={cat:"Expedientes",hits:1,why:"La solicitud aparece vinculada a un expediente o trámite.",words:["solicitud"]};
  if(!best)return {cat:"Revisar",confidence:30,why:"No se han encontrado suficientes indicadores para una clasificación automática.",hits:[]};
  return {cat:best.cat,confidence:Math.min(96,48+best.hits*10),why:best.why+" Indicadores: "+best.words.join(", ")+".",hits:best.words};
 }
@@ -193,9 +209,9 @@ window.saveEdit=function(i,btn){
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
 }
 function exportReport(){
- let out="ORGANIZADOR IA V1.3.2 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ let out="ORGANIZADOR IA V1.4 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
  analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
- const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_3.txt";a.click();URL.revokeObjectURL(url);
+ const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_4.txt";a.click();URL.revokeObjectURL(url);
 }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
