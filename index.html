@@ -1,1 +1,61 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Organizador IA — Prueba PDF 02</title><style>body{font-family:Arial,sans-serif;max-width:900px;margin:auto;padding:20px;background:#f5f7fa;color:#17202a}button{font-size:18px;padding:14px 20px;border:0;border-radius:12px;background:#2563eb;color:white}input{display:none}.box{background:white;border-radius:14px;padding:18px;margin-top:18px;box-shadow:0 2px 10px #0001}pre{white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto}.ok{color:#16733b}.err{color:#b42318}</style></head><body><h1>📄 Organizador IA — Prueba PDF 02</h1><p>Prueba de lectura de PDF con el worker configurado correctamente.</p><button id="btn">📂 Seleccionar PDF</button><input id="pdfFile" type="file" accept=".pdf,application/pdf"><div id="result" class="box">Selecciona uno de tus PDF.</div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>(function(){const btn=document.getElementById("btn"),input=document.getElementById("pdfFile"),result=document.getElementById("result");if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";}btn.addEventListener("click",()=>input.click());input.addEventListener("change",async()=>{const file=input.files&&input.files[0];if(!file)return;result.innerHTML="<b>⏳ Leyendo PDF…</b>";try{if(!window.pdfjsLib)throw new Error("PDF.js no se ha cargado.");const buffer=await file.arrayBuffer();const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;let text="";const maxPages=Math.min(pdf.numPages,30);for(let n=1;n<=maxPages;n++){const page=await pdf.getPage(n);const content=await page.getTextContent();text+="\n\n--- Página "+n+" ---\n"+content.items.map(x=>x.str||"").join(" ");}text=text.trim();if(text){result.innerHTML='<div class="ok"><b>✅ PDF leído correctamente</b><br>Archivo: '+esc(file.name)+'<br>Páginas: '+pdf.numPages+'<br>Caracteres extraídos: '+text.length+'</div><pre>'+esc(text)+'</pre>';}else{result.innerHTML='<b>⚠️ PDF sin texto extraíble</b><br>El PDF se ha abierto correctamente, pero parece no contener texto seleccionable. Probablemente sea un PDF escaneado. El siguiente paso será añadir OCR.';}}catch(err){result.innerHTML='<div class="err"><b>❌ Error al leer el PDF</b><br>'+esc(err&&err.message?err.message:String(err))+'</div>';}});function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}})();</script></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Organizador IA — Prueba PDF 03</title>
+<style>
+body{font-family:Arial,sans-serif;max-width:900px;margin:auto;padding:20px;background:#f5f7fa;color:#17202a}
+button{font-size:18px;padding:14px 20px;border:0;border-radius:12px;background:#2563eb;color:white}
+input{display:none}.box{background:white;border-radius:14px;padding:18px;margin-top:18px;box-shadow:0 2px 10px #0001}
+pre{white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto}
+.ok{color:#16733b}.warn{color:#9a6700}.err{color:#b42318}
+</style>
+</head>
+<body>
+<h1>📄 Organizador IA — Prueba PDF 03</h1>
+<p>Lectura normal de PDF + detección de texto insuficiente. Si el PDF parece escaneado, prepara el siguiente paso: OCR.</p>
+<button id="btn">📂 Seleccionar PDF</button>
+<input id="pdfFile" type="file" accept=".pdf,application/pdf">
+<div id="result" class="box">Selecciona un PDF.</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+(function(){
+ const btn=document.getElementById("btn"), input=document.getElementById("pdfFile"), result=document.getElementById("result");
+ if(window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+ btn.addEventListener("click",()=>input.click());
+
+ input.addEventListener("change",async()=>{
+   const file=input.files&&input.files[0]; if(!file)return;
+   result.innerHTML="<b>⏳ Analizando PDF…</b>";
+   try{
+     if(!window.pdfjsLib) throw new Error("PDF.js no se ha cargado.");
+     const buffer=await file.arrayBuffer();
+     const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
+     let text="", pagesWithText=0, maxPages=Math.min(pdf.numPages,30);
+
+     for(let n=1;n<=maxPages;n++){
+       const page=await pdf.getPage(n);
+       const content=await page.getTextContent();
+       const pageText=content.items.map(x=>x.str||"").join(" ").trim();
+       if(pageText) pagesWithText++;
+       text+="\\n\\n--- Página "+n+" ---\\n"+pageText;
+     }
+     text=text.trim();
+     const chars=text.replace(/--- Página \\d+ ---/g,"").trim().length;
+
+     if(chars>=120){
+       result.innerHTML='<div class="ok"><b>✅ PDF leído correctamente</b><br>Archivo: '+esc(file.name)+'<br>Páginas: '+pdf.numPages+'<br>Caracteres útiles: '+chars+'<br>Páginas con texto: '+pagesWithText+'</div><pre>'+esc(text)+'</pre>';
+     }else{
+       result.innerHTML='<div class="warn"><b>⚠️ Texto insuficiente detectado</b><br>Archivo: '+esc(file.name)+'<br>Páginas: '+pdf.numPages+'<br>Solo se han recuperado '+chars+' caracteres útiles.<br><br>🔎 Este PDF parece escaneado o basado en imágenes.<br>El siguiente paso será ejecutar OCR página por página.</div>';
+     }
+   }catch(err){
+     result.innerHTML='<div class="err"><b>❌ Error al leer el PDF</b><br>'+esc(err&&err.message?err.message:String(err))+'</div>';
+   }
+ });
+ function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+})();
+</script>
+</body>
+</html>
