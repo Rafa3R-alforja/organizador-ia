@@ -2,99 +2,180 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Organizador IA — Prueba PDF 04 OCR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#173b7a">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Organizador IA V1.3</title>
 <style>
-body{font-family:Arial,sans-serif;max-width:900px;margin:auto;padding:20px;background:#f5f7fa;color:#17202a}
-button{font-size:18px;padding:14px 20px;border:0;border-radius:12px;background:#2563eb;color:white}
-input{display:none}.box{background:white;border-radius:14px;padding:18px;margin-top:18px;box-shadow:0 2px 10px #0001}
-pre{white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto}
-.ok{color:#16733b}.warn{color:#9a6700}.err{color:#b42318}
-.bar{margin-top:12px;padding:10px;background:#eef2ff;border-radius:10px}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f6fb;color:#17202a}
+header{background:#173b7a;color:white;padding:18px 16px;position:sticky;top:0;z-index:5}
+h1{font-size:23px;margin:0 0 5px}.sub{opacity:.9;font-size:13px}
+main{max-width:1000px;margin:auto;padding:16px}.card{background:white;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 10px #0001}
+.actions{display:flex;gap:9px;flex-wrap:wrap}button{border:0;border-radius:11px;padding:12px 15px;font-weight:700;font-size:15px;background:#173b7a;color:white}
+button.secondary{background:#e8edf5;color:#173b7a}button.danger{background:#b42318}button:disabled{opacity:.5}
+input[type=file]{display:none}.safe{background:#e9f7ef;color:#17663a;border-radius:12px;padding:11px;font-weight:700}
+.progress{height:10px;background:#e8edf5;border-radius:99px;overflow:hidden;margin-top:10px}.bar{height:100%;width:0;background:#2f6fed}
+.file{border:1px solid #e0e5ed;border-radius:14px;padding:14px;margin:10px 0}.top{display:flex;justify-content:space-between;gap:10px}.name{font-weight:800;overflow-wrap:anywhere}.meta{font-size:12px;color:#667085;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:12px}.field{background:#f7f9fc;padding:10px;border-radius:10px}.label{font-size:11px;color:#667085;text-transform:uppercase}.value{font-weight:700;margin-top:3px;overflow-wrap:anywhere}
+pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;background:#f7f9fc;border-radius:10px;padding:10px;font-size:12px}
+.badge{display:inline-block;border-radius:99px;padding:4px 8px;background:#edf2ff;color:#173b7a;font-size:12px;font-weight:700}
+.small{font-size:12px;color:#667085}.status{font-weight:700}.hidden{display:none}
 </style>
 </head>
 <body>
-<h1>📄 Organizador IA — Prueba PDF 04</h1>
-<p>Extracción normal + OCR automático para PDF escaneado.</p>
-<button id="btn">📂 Seleccionar PDF</button>
-<input id="pdfFile" type="file" accept=".pdf,application/pdf">
-<div id="result" class="box">Selecciona un PDF.</div>
+<header><h1>📂 Organizador IA V1.3</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
+<main>
+<div class="card">
+<div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
+<p>Selecciona documentos, imágenes o textos. La aplicación analizará el contenido y propondrá una organización para que tú la revises.</p>
+<div class="actions">
+<label for="files" class="button"><button type="button">📂 Seleccionar archivos</button></label>
+<input id="files" type="file" multiple>
+<button id="analyze" disabled>🔎 Analizar</button>
+<button id="clear" class="secondary">🗑️ Limpiar</button>
+<button id="report" class="secondary" disabled>📋 Exportar informe</button>
+</div>
+<div id="selection" class="small">Ningún archivo seleccionado.</div>
+</div>
+<div id="results"></div>
+</main>
 
+<script>
+const $=id=>document.getElementById(id);
+const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results");
+let files=[], analyses=[];
+
+filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; renderSelection();});
+clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;});
+analyzeBtn.addEventListener("click",analyzeAll);
+reportBtn.addEventListener("click",exportReport);
+
+function renderSelection(){
+ selection.textContent=files.length?`${files.length} archivo(s) seleccionado(s).`:"Ningún archivo seleccionado.";
+ analyzeBtn.disabled=!files.length;
+}
+
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+function size(n){if(n<1024)return n+" B";if(n<1048576)return (n/1024).toFixed(1)+" KB";return (n/1048576).toFixed(1)+" MB";}
+function ext(name){let p=name.toLowerCase().split(".");return p.length>1?p.pop():"";}
+function dateText(s){let m=s.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b|\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);if(!m)return"";return m[1]?`${m[3].padStart(2,"0")}/${m[2].padStart(2,"0")}/${m[1]}`:`${m[4].padStart(2,"0")}/${m[5].padStart(2,"0")}/${m[6]}`;}
+function expediente(s){let m=s.match(/\b(?:exp(?:ediente)?|expte)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9\/.-]{2,})/i);return m?m[1]:"";}
+function classify(text,name){
+ const s=(name+" "+text).toLowerCase();
+ const rules=[
+  ["Facturas",["factura","base imponible","iva","importe total","proveedor","precio abonado","pago realizado"],"Documento económico o factura."],
+  ["Contratos",["contrato","contratación","adjudicatario","cláusula","clausula"],"Contiene terminología contractual."],
+  ["Expedientes",["expediente","expte","resolución","resolucion","solicitud","registro de entrada","trámite","tramite"],"Contiene referencias a un expediente o trámite."],
+  ["Trabajo / Protocolos",["protocolo","procedimiento","instrucción","instruccion","manual","seguimiento"],"Contiene terminología de trabajo, protocolo o procedimiento."],
+  ["Citas / Trámites",["cita previa","cita confirmada","fecha","hora","centro","localizador","itv"],"Contiene datos de una cita o trámite."],
+  ["Imágenes",["imagen","fotografía","fotografia","captura","screenshot"],"Archivo de imagen o contenido visual."]
+ ];
+ let best=null;
+ for(const [cat,words,why] of rules){let hits=words.filter(w=>s.includes(w));if(hits.length && (!best||hits.length>best.hits))best={cat,hits:hits.length,why,words:hits};}
+ if(!best) return {cat:"Revisar",confidence:30,why:"No se han encontrado suficientes indicadores para una clasificación automática.",hits:[]};
+ return {cat:best.cat,confidence:Math.min(96,48+best.hits*10),why:best.why+" Indicadores: "+best.words.join(", ")+".",hits:best.words};
+}
+function proposal(name,text,cat){
+ const d=dateText(text+" "+name), ex=expediente(text+" "+name);
+ let base=text.replace(/\s+/g," ").trim().slice(0,80).replace(/[\\/:*?"<>|]/g,"");
+ if(!base) base=name.replace(/\.[^.]+$/,"");
+ base=base.replace(/[^\p{L}\p{N}\s._-]/gu,"").trim();
+ const prefix=d?d+" - ":"";
+ const expPart=ex?" - Exp "+ex:"";
+ let extn=name.includes(".")?"."+name.split(".").pop():"";
+ let newName=(prefix+(base||cat)+expPart).replace(/\s+/g," ").trim()+extn;
+ return {name:newName,dest:"/Organizado IA/"+cat+(ex?"/Expediente "+ex:"")};
+}
+
+async function readTextFile(file){return await file.text();}
+async function readPdf(file,progress){
+ const buffer=await file.arrayBuffer();
+ const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
+ let text="", max=Math.min(pdf.numPages,30);
+ for(let n=1;n<=max;n++){progress("Leyendo página "+n+" de "+max);let p=await pdf.getPage(n),c=await p.getTextContent();text+="\n\n--- Página "+n+" ---\n"+c.items.map(x=>x.str||"").join(" ");}
+ return {text:text.trim(),pages:pdf.numPages,method:"Texto PDF"};
+}
+async function ocrPdf(file,progress){
+ const buffer=await file.arrayBuffer();
+ const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
+ let text="",max=Math.min(pdf.numPages,30);
+ const worker=await Tesseract.createWorker("spa",1,{logger:m=>{if(m.status)progress("OCR: "+m.status+" "+Math.round((m.progress||0)*100)+"%");}});
+ for(let n=1;n<=max;n++){progress("OCR página "+n+" de "+max);let p=await pdf.getPage(n),v=p.getViewport({scale:2}),canvas=document.createElement("canvas");canvas.width=Math.ceil(v.width);canvas.height=Math.ceil(v.height);await p.render({canvasContext:canvas.getContext("2d"),viewport:v}).promise;let r=await worker.recognize(canvas);text+="\n\n--- Página "+n+" ---\n"+(r.data.text||"");}
+ await worker.terminate(); return {text:text.trim(),pages:pdf.numPages,method:"OCR de PDF"};
+}
+async function readImage(file,progress){
+ progress("OCR de imagen…");
+ const r=await Tesseract.recognize(file,"spa",{logger:m=>{if(m.status)progress("OCR: "+m.status+" "+Math.round((m.progress||0)*100)+"%");}});
+ return {text:r.data.text||"",pages:1,method:"OCR de imagen"};
+}
+async function extract(file,progress){
+ const e=ext(file.name);
+ if(e==="pdf"){
+   let r=await readPdf(file,progress), useful=r.text.replace(/--- Página \d+ ---/g,"").trim();
+   if(useful.length<120) r=await ocrPdf(file,progress);
+   return r;
+ }
+ if(["txt","csv","md","json","xml","html","htm"].includes(e)) return {text:await readTextFile(file),pages:1,method:"Lectura directa"};
+ if(["png","jpg","jpeg","webp","gif","bmp"].includes(e)) return await readImage(file,progress);
+ if(e==="docx"){
+   if(!window.mammoth) throw new Error("Lector DOCX no disponible.");
+   const b=await file.arrayBuffer(),r=await mammoth.extractRawText({arrayBuffer:b});
+   return {text:r.value||"",pages:1,method:"Extracción DOCX"};
+ }
+ return {text:"",pages:1,method:"Nombre/metadatos"};
+}
+async function analyzeAll(){
+ results.innerHTML=""; analyses=[]; reportBtn.disabled=true; analyzeBtn.disabled=true;
+ for(let i=0;i<files.length;i++){
+   const file=files[i], id="r"+i;
+   results.insertAdjacentHTML("beforeend",`<div class="card file" id="${id}"><div class="name">⏳ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div><div class="status">Preparando análisis…</div><div class="progress"><div class="bar"></div></div></div>`);
+   const box=$(id), status=box.querySelector(".status"), bar=box.querySelector(".bar");
+   try{
+     const r=await extract(file,msg=>{status.textContent=msg;bar.style.width="70%";});
+     const c=classify(r.text,file.name), p=proposal(file.name,r.text,c.cat);
+     const a={file,r,c,p};
+     analyses.push(a);bar.style.width="100%";
+     box.innerHTML=`<div class="top"><div><div class="name">📄 ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">${c.confidence}% confianza</span></div>
+     <div class="grid">
+      <div class="field"><div class="label">Categoría propuesta</div><div class="value">${esc(c.cat)}</div></div>
+      <div class="field"><div class="label">Nuevo nombre</div><div class="value">${esc(p.name)}</div></div>
+      <div class="field"><div class="label">Destino propuesto</div><div class="value">${esc(p.dest)}</div></div>
+      <div class="field"><div class="label">Método</div><div class="value">${esc(r.method)}</div></div>
+     </div>
+     <p><b>💡 Explicación:</b> ${esc(c.why)}</p>
+     <p class="small">Texto recuperado: ${r.text.length} caracteres · ${r.pages} página(s).</p>
+     <details><summary>Ver contenido recuperado</summary><pre>${esc(r.text||"No se ha recuperado texto.")}</pre></details>
+     <div class="actions"><button class="secondary" onclick="this.parentElement.parentElement.querySelector('.edit').classList.toggle('hidden')">✏️ Revisar propuesta</button></div>
+     <div class="edit hidden">
+       <div class="grid">
+        <div class="field"><div class="label">Categoría</div><input class="ecat" value="${esc(c.cat)}" style="width:100%;padding:9px"></div>
+        <div class="field"><div class="label">Nombre</div><input class="ename" value="${esc(p.name)}" style="width:100%;padding:9px"></div>
+        <div class="field"><div class="label">Destino</div><input class="edest" value="${esc(p.dest)}" style="width:100%;padding:9px"></div>
+       </div>
+       <button onclick="saveEdit(${i},this)">💾 Guardar cambios</button>
+     </div>`;
+   }catch(e){
+     analyses.push({file,r:{text:"",method:"Error",pages:0},c:{cat:"Revisar",confidence:0,why:"No se pudo analizar el archivo.",hits:[]},p:{name:file.name,dest:"/Organizado IA/Revisar"},error:e.message});
+     box.innerHTML=`<div class="name">❌ ${esc(file.name)}</div><p class="err">No se pudo analizar: ${esc(e.message||e)}</p>`;
+   }
+ }
+ analyzeBtn.disabled=false;reportBtn.disabled=!analyses.length;
+}
+window.saveEdit=function(i,btn){
+ const box=btn.closest(".file"),a=analyses[i];
+ a.c.cat=box.querySelector(".ecat").value;
+ a.p.name=box.querySelector(".ename").value;
+ a.p.dest=box.querySelector(".edest").value;
+ alert("Propuesta actualizada. No se ha modificado ningún archivo.");
+}
+function exportReport(){
+ let out="ORGANIZADOR IA V1.3 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
+ const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_3.txt";a.click();URL.revokeObjectURL(url);
+}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script>
-(function(){
- const btn=document.getElementById("btn"), input=document.getElementById("pdfFile"), result=document.getElementById("result");
- if(window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-
- btn.addEventListener("click",()=>input.click());
-
- input.addEventListener("change",async()=>{
-   const file=input.files&&input.files[0]; if(!file)return;
-   result.innerHTML="<b>⏳ Analizando PDF…</b>";
-   try{
-     if(!window.pdfjsLib) throw new Error("PDF.js no se ha cargado.");
-     const buffer=await file.arrayBuffer();
-     const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
-     let text="", pagesWithText=0, maxPages=Math.min(pdf.numPages,30);
-
-     for(let n=1;n<=maxPages;n++){
-       const page=await pdf.getPage(n);
-       const content=await page.getTextContent();
-       const pageText=content.items.map(x=>x.str||"").join(" ").trim();
-       if(pageText) pagesWithText++;
-       text+="\n\n--- Página "+n+" ---\n"+pageText;
-     }
-
-     text=text.trim();
-     const chars=text.replace(/--- Página \d+ ---/g,"").trim().length;
-
-     if(chars>=120){
-       result.innerHTML='<div class="ok"><b>✅ PDF leído correctamente</b><br>Archivo: '+esc(file.name)+'<br>Método: Texto PDF<br>Páginas: '+pdf.numPages+'<br>Caracteres útiles: '+chars+'</div><pre>'+esc(text)+'</pre>';
-       return;
-     }
-
-     result.innerHTML='<div class="warn"><b>⚠️ Texto insuficiente</b><br>Se han recuperado '+chars+' caracteres.<br>🔎 Iniciando OCR página por página…</div>';
-     let ocrText="";
-
-     const worker=await Tesseract.createWorker("spa",1,{
-       logger:m=> {
-         if(m && m.status){
-           const pct=m.progress ? Math.round(m.progress*100) : 0;
-           result.innerHTML='<div class="bar"><b>🔎 OCR en curso</b><br>'+esc(m.status)+' '+pct+'%</div>';
-         }
-       }
-     });
-
-     for(let n=1;n<=maxPages;n++){
-       result.innerHTML='<div class="bar"><b>🔎 OCR página '+n+' de '+maxPages+'…</b></div>';
-       const page=await pdf.getPage(n);
-       const viewport=page.getViewport({scale:2});
-       const canvas=document.createElement("canvas");
-       canvas.width=Math.ceil(viewport.width);
-       canvas.height=Math.ceil(viewport.height);
-       const ctx=canvas.getContext("2d");
-       await page.render({canvasContext:ctx,viewport}).promise;
-       const resultOcr=await worker.recognize(canvas);
-       ocrText+="\n\n--- Página "+n+" ---\n"+(resultOcr.data.text||"").trim();
-     }
-
-     await worker.terminate();
-     ocrText=ocrText.trim();
-     const ocrChars=ocrText.length;
-
-     if(ocrChars){
-       result.innerHTML='<div class="ok"><b>✅ OCR completado</b><br>Archivo: '+esc(file.name)+'<br>Método: OCR de PDF<br>Páginas: '+pdf.numPages+'<br>Caracteres recuperados: '+ocrChars+'</div><pre>'+esc(ocrText)+'</pre>';
-     }else{
-       result.innerHTML='<div class="warn"><b>⚠️ OCR no encontró texto</b><br>El PDF parece estar compuesto por imágenes, pero no se ha podido reconocer texto.</div>';
-     }
-   }catch(err){
-     result.innerHTML='<div class="err"><b>❌ Error</b><br>'+esc(err&&err.message?err.message:String(err))+'</div>';
-   }
- });
-
- function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
-})();
-</script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
 </body>
 </html>
