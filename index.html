@@ -29,7 +29,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
 <p>Selecciona documentos, imágenes o textos. La aplicación analizará el contenido y propondrá una organización para que tú la revises.</p>
 <div class="actions">
-<label for="files" class="button"><button type="button">📂 Seleccionar archivos</button></label>
+<button id="selectBtn" type="button">📂 Seleccionar archivos</button>
 <input id="files" type="file" multiple>
 <button id="analyze" disabled>🔎 Analizar</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
@@ -43,7 +43,10 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <script>
 const $=id=>document.getElementById(id);
 const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results");
+const selectBtn=$("selectBtn");
+selectBtn.addEventListener("click",()=>filesInput.click());
 let files=[], analyses=[];
+selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
 
 filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; renderSelection();});
 clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;});
