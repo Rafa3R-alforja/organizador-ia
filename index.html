@@ -19,11 +19,11 @@ input[type=file]{display:none}.safe{background:#e9f7ef;color:#17663a;border-radi
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:12px}.field{background:#f7f9fc;padding:10px;border-radius:10px}.label{font-size:11px;color:#667085;text-transform:uppercase}.value{font-weight:700;margin-top:3px;overflow-wrap:anywhere}
 pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;background:#f7f9fc;border-radius:10px;padding:10px;font-size:12px}
 .badge{display:inline-block;border-radius:99px;padding:4px 8px;background:#edf2ff;color:#173b7a;font-size:12px;font-weight:700}
-.small{font-size:12px;color:#667085}.batch-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:10px}.batch-summary .field{padding:9px}.status{font-weight:700}.hidden{display:none}
+.small{font-size:12px;color:#667085}.status{font-weight:700}.hidden{display:none}
 </style>
 </head>
 <body>
-<header><h1>📂 Organizador IA V1.6</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
+<header><h1>📂 Organizador IA V1.6</h1><div class="sub">Analiza por lotes. Revisa y aprueba. Tú decides qué hacer.</div></header>
 <main>
 <div class="card">
 <div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
@@ -31,17 +31,15 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <div class="actions">
 <button id="selectBtn" type="button">📂 Seleccionar archivos</button>
 <input id="files" type="file" multiple>
-<button id="analyze" disabled>🔎 Analizar</button>
+<button id="analyze" disabled>🔎 Analizar lote</button>
+<button id="approveAll" class="secondary" disabled>✅ Aprobar lote</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
 <button id="report" class="secondary" disabled>📋 Exportar informe</button>
 <button id="categoriesBtn" class="secondary" type="button">⚙️ Categorías</button>
 </div>
 <div id="selection" class="small">Ningún archivo seleccionado.</div>
-<div id="batchPanel" class="hidden" style="margin-top:10px">
-  <div class="small"><b id="batchStatus">Lote preparado.</b></div>
-  <div class="progress"><div id="batchBar" class="bar"></div></div>
-  <div class="small" id="batchDetail" style="margin-top:5px"></div>
-</div>
+<div id="batchProgress" class="hidden" style="margin-top:12px"><div class="top"><b>Progreso del lote</b><span id="batchPercent" class="small">0%</span></div><div class="progress"><div id="batchBar" class="bar"></div></div><div id="batchStatus" class="small" style="margin-top:5px">Preparado.</div></div>
+<div id="summary" class="hidden" style="margin-top:12px"></div>
 </div>
 <div id="categoriesPanel" class="card hidden">
 <h2 style="margin-top:0">⚙️ Categorías de clasificación</h2>
@@ -61,10 +59,9 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <script>
 const $=id=>document.getElementById(id);
 const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
-const batchPanel=$("batchPanel"), batchStatus=$("batchStatus"), batchBar=$("batchBar"), batchDetail=$("batchDetail");
-const selectBtn=$("selectBtn");
+const selectBtn=$("selectBtn"), approveAllBtn=$("approveAll"), batchProgress=$("batchProgress"), batchBar=$("batchBar"), batchPercent=$("batchPercent"), batchStatus=$("batchStatus"), summary=$("summary");
 selectBtn.addEventListener("click",()=>filesInput.click());
-let files=[], analyses=[];
+let files=[], analyses=[], isAnalyzing=false;
 const BUILTIN_RULES=[
  ["Vehículos / Tráfico",["airbag","cambio de airbag","sustitución de airbag","sustitucion de airbag","campaña airbag","campana airbag","aviso cambio airbag"],"Contiene referencias a un aviso o campaña relacionada con airbags o vehículos."],
  ["Facturas",["factura","base imponible","iva","importe total","proveedor","precio abonado","pago realizado"],"Documento económico o factura."],
@@ -85,24 +82,21 @@ renderCategories();
 
 selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
 
-filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; renderSelection();});
-clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;batchPanel.classList.add("hidden");});
+filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; approveAllBtn.disabled=true; summary.classList.add("hidden"); batchProgress.classList.add("hidden"); renderSelection();});
+clearBtn.addEventListener("click",()=>{if(isAnalyzing)return;files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;approveAllBtn.disabled=true;summary.classList.add("hidden");batchProgress.classList.add("hidden");});
 analyzeBtn.addEventListener("click",analyzeAll);
+approveAllBtn.addEventListener("click",approveAll);
 reportBtn.addEventListener("click",exportReport);
 
 function renderSelection(){
- if(!files.length){
-   selection.textContent="Ningún archivo seleccionado.";
-   analyzeBtn.disabled=true;
-   batchPanel.classList.add("hidden");
-   return;
- }
- selection.textContent=`${files.length} archivo(s) seleccionado(s). ${files.length>1?"Se analizarán automáticamente uno detrás de otro.":"Listo para analizar."}`;
- analyzeBtn.disabled=false;
- batchPanel.classList.remove("hidden");
- batchStatus.textContent=`Lote preparado: ${files.length} archivo(s).`;
- batchBar.style.width="0%";
- batchDetail.textContent="Pulsa «Analizar» para comenzar.";
+ selection.textContent=files.length?`${files.length} archivo(s) seleccionado(s). El análisis será secuencial y seguro.`:"Ningún archivo seleccionado.";
+ analyzeBtn.disabled=!files.length||isAnalyzing;
+}
+function updateBatch(done,total,msg){const pct=total?Math.round(done/total*100):0;batchProgress.classList.remove("hidden");batchBar.style.width=pct+"%";batchPercent.textContent=pct+"%";batchStatus.textContent=msg||"Procesando…";}
+function renderSummary(){
+ const total=analyses.length, ok=analyses.filter(a=>!a.error).length, err=analyses.filter(a=>a.error).length, approved=analyses.filter(a=>a.approved).length, review=analyses.filter(a=>!a.error&&!a.approved).length;
+ summary.classList.remove("hidden");summary.innerHTML=`<div class="field"><b>Resumen del lote</b><div class="small" style="margin-top:6px">Total: ${total} · Analizados: ${ok} · Errores: ${err} · Aprobados: ${approved} · Pendientes de revisión: ${review}</div></div>`;
+ reportBtn.disabled=!total; approveAllBtn.disabled=!ok||isAnalyzing||approved===ok;
 }
 
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
@@ -148,8 +142,7 @@ function detectPerson(n){
 }
 function detectPlate(n){const m=n.match(/\b\d{4}[BCDFGHJKLMNPRSTVWXYZ]{3}\b/i);return m?m[0].toUpperCase():"";}
 function detectOrganism(n){
- const patterns=[/(?:organismo|entidad|centro|empresa)\s*[:\-]\s*([A-ZÁÉÍÓÚÑ][^
-,.;]{2,60})/i,/\b(DGT|ITV|SITVAL|TRÁFICO|TRAFICO)\b/i];
+ const patterns=[/(?:organismo|entidad|centro|empresa)\s*[:\-]\s*([A-ZÁÉÍÓÚÑ][^\n,.;]{2,60})/i,/\b(DGT|ITV|SITVAL|TRÁFICO|TRAFICO)\b/i];
  for(const p of patterns){const m=n.match(p);if(m)return (m[1]||m[0]).trim();}
  return "";
 }
@@ -184,10 +177,7 @@ async function readPdf(file,progress){
  const buffer=await file.arrayBuffer();
  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
  let text="", max=Math.min(pdf.numPages,30);
- for(let n=1;n<=max;n++){progress("Leyendo página "+n+" de "+max);let p=await pdf.getPage(n),c=await p.getTextContent();text+="
-
---- Página "+n+" ---
-"+c.items.map(x=>x.str||"").join(" ");}
+ for(let n=1;n<=max;n++){progress("Leyendo página "+n+" de "+max);let p=await pdf.getPage(n),c=await p.getTextContent();text+="\n\n--- Página "+n+" ---\n"+c.items.map(x=>x.str||"").join(" ");}
  return {text:text.trim(),pages:pdf.numPages,method:"Texto PDF"};
 }
 async function ocrPdf(file,progress){
@@ -195,10 +185,7 @@ async function ocrPdf(file,progress){
  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
  let text="",max=Math.min(pdf.numPages,30);
  const worker=await Tesseract.createWorker("spa",1,{logger:m=>{if(m.status)progress("OCR: "+m.status+" "+Math.round((m.progress||0)*100)+"%");}});
- for(let n=1;n<=max;n++){progress("OCR página "+n+" de "+max);let p=await pdf.getPage(n),v=p.getViewport({scale:2}),canvas=document.createElement("canvas");canvas.width=Math.ceil(v.width);canvas.height=Math.ceil(v.height);await p.render({canvasContext:canvas.getContext("2d"),viewport:v}).promise;let r=await worker.recognize(canvas);text+="
-
---- Página "+n+" ---
-"+(r.data.text||"");}
+ for(let n=1;n<=max;n++){progress("OCR página "+n+" de "+max);let p=await pdf.getPage(n),v=p.getViewport({scale:2}),canvas=document.createElement("canvas");canvas.width=Math.ceil(v.width);canvas.height=Math.ceil(v.height);await p.render({canvasContext:canvas.getContext("2d"),viewport:v}).promise;let r=await worker.recognize(canvas);text+="\n\n--- Página "+n+" ---\n"+(r.data.text||"");}
  await worker.terminate(); return {text:text.trim(),pages:pdf.numPages,method:"OCR de PDF"};
 }
 async function readImage(file,progress){
@@ -223,89 +210,54 @@ async function extract(file,progress){
  return {text:"",pages:1,method:"Nombre/metadatos"};
 }
 async function analyzeAll(){
- results.innerHTML=""; analyses=[]; reportBtn.disabled=true; analyzeBtn.disabled=true;
- batchPanel.classList.remove("hidden");
- const total=files.length;
- for(let i=0;i<total;i++){
+ if(isAnalyzing||!files.length)return;
+ isAnalyzing=true; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; approveAllBtn.disabled=true; analyzeBtn.disabled=true; clearBtn.disabled=true;
+ updateBatch(0,files.length,"Iniciando análisis del lote…");
+ for(let i=0;i<files.length;i++){
    const file=files[i], id="r"+i;
-   batchStatus.textContent=`Analizando ${i+1} de ${total}`;
-   batchDetail.textContent=`${file.name} · ${Math.round((i/total)*100)}% del lote`;
-   batchBar.style.width=Math.round((i/total)*100)+"%";
-   results.insertAdjacentHTML("beforeend",`<div class="card file" id="${id}"><div class="name">⏳ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div><div class="status">Preparando análisis…</div><div class="progress"><div class="bar"></div></div></div>`);
+   results.insertAdjacentHTML("beforeend",`<div class="card file" id="${id}"><div class="top"><div><div class="name">⏳ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">Pendiente</span></div><div class="status">Preparando análisis…</div><div class="progress"><div class="bar"></div></div></div>`);
    const box=$(id), status=box.querySelector(".status"), bar=box.querySelector(".bar");
    try{
-     const r=await extract(file,msg=>{status.textContent=msg;bar.style.width="70%";});
+     updateBatch(i,files.length,`Analizando ${i+1} de ${files.length}: ${file.name}`);
+     const r=await extract(file,msg=>{status.textContent=msg;bar.style.width="65%";});
      const c=classify(r.text,file.name), p=proposal(file.name,r.text,c.cat);
-     const a={file,r,c,p}; analyses.push(a); bar.style.width="100%";
-     box.innerHTML=`<div class="top"><div><div class="name">📄 ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">${c.confidence}% confianza</span></div>
-     <div class="grid">
-      <div class="field"><div class="label">Categoría propuesta</div><div class="value">${esc(c.cat)}</div></div>
-      <div class="field"><div class="label">Nuevo nombre</div><div class="value">${esc(p.name)}</div></div>
-      <div class="field"><div class="label">Destino propuesto</div><div class="value">${esc(p.dest)}</div></div>
-      <div class="field"><div class="label">Método</div><div class="value">${esc(r.method)}</div></div>
-     </div>
-     <p><b>💡 Explicación:</b> ${esc(c.why)}</p>
-     <p class="small">Texto recuperado: ${r.text.length} caracteres · ${r.pages} página(s).</p>
-     <div class="small"><b>Datos detectados:</b> ${esc([
-       p.meta?.date?("Fecha: "+p.meta.date):"",
-       p.meta?.expediente?("Expediente: "+p.meta.expediente):"",
-       p.meta?.persona?("Persona: "+p.meta.persona):"",
-       p.meta?.matricula?("Matrícula: "+p.meta.matricula):"",
-       p.meta?.organismo?("Organismo: "+p.meta.organismo):""
-     ].filter(Boolean).join(" · ")||"No se han detectado datos adicionales.")}</div>
+     const a={file,r,c,p,approved:false,status:"Pendiente de revisión"}; analyses.push(a); bar.style.width="100%";
+     box.innerHTML=`<div class="top"><div><div class="name">📄 ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge statusBadge">Pendiente de revisión</span></div>
+     <div class="grid"><div class="field"><div class="label">Categoría propuesta</div><div class="value">${esc(c.cat)}</div></div><div class="field"><div class="label">Nuevo nombre</div><div class="value">${esc(p.name)}</div></div><div class="field"><div class="label">Destino propuesto</div><div class="value">${esc(p.dest)}</div></div><div class="field"><div class="label">Método</div><div class="value">${esc(r.method)}</div></div></div>
+     <p><b>💡 Explicación:</b> ${esc(c.why)}</p><p class="small">Texto recuperado: ${r.text.length} caracteres · ${r.pages} página(s).</p>
+     <div class="small"><b>Datos detectados:</b> ${esc([p.meta?.date?("Fecha: "+p.meta.date):"",p.meta?.expediente?("Expediente: "+p.meta.expediente):"",p.meta?.persona?("Persona: "+p.meta.persona):"",p.meta?.matricula?("Matrícula: "+p.meta.matricula):"",p.meta?.organismo?("Organismo: "+p.meta.organismo):""].filter(Boolean).join(" · ")||"No se han detectado datos adicionales.")}</div>
      <details><summary>Ver contenido recuperado</summary><pre>${esc(r.text||"No se ha recuperado texto.")}</pre></details>
-     <div class="actions"><button class="secondary" onclick="this.parentElement.parentElement.querySelector('.edit').classList.toggle('hidden')">✏️ Revisar propuesta</button></div>
-     <div class="edit hidden">
-       <div class="grid">
-        <div class="field"><div class="label">Categoría</div><input class="ecat" value="${esc(c.cat)}" style="width:100%;padding:9px"></div>
-        <div class="field"><div class="label">Nombre</div><input class="ename" value="${esc(p.name)}" style="width:100%;padding:9px"></div>
-        <div class="field"><div class="label">Destino</div><input class="edest" value="${esc(p.dest)}" style="width:100%;padding:9px"></div>
-       </div>
-       <button onclick="saveEdit(${i},this)">💾 Guardar cambios</button>
-     </div>`;
+     <div class="actions"><button class="secondary" onclick="this.parentElement.parentElement.querySelector('.edit').classList.toggle('hidden')">✏️ Revisar propuesta</button><button onclick="approveOne(${i})">✅ Aprobar</button></div>
+     <div class="edit hidden"><div class="grid"><div class="field"><div class="label">Categoría</div><input class="ecat" value="${esc(c.cat)}" style="width:100%;padding:9px"></div><div class="field"><div class="label">Nombre</div><input class="ename" value="${esc(p.name)}" style="width:100%;padding:9px"></div><div class="field"><div class="label">Destino</div><input class="edest" value="${esc(p.dest)}" style="width:100%;padding:9px"></div></div><button onclick="saveEdit(${i},this)">💾 Guardar cambios</button></div>`;
    }catch(e){
-     analyses.push({file,r:{text:"",method:"Error",pages:0},c:{cat:"Revisar",confidence:0,why:"No se pudo analizar el archivo.",hits:[]},p:{name:file.name,dest:"/Organizado IA/Revisar"},error:e.message});
-     box.innerHTML=`<div class="name">❌ ${esc(file.name)}</div><p>No se pudo analizar: ${esc(e.message||e)}</p>`;
+     const a={file,r:{text:"",method:"Error",pages:0},c:{cat:"Revisar",confidence:0,why:"No se pudo analizar el archivo.",hits:[]},p:{name:file.name,dest:"/Organizado IA/Revisar"},error:e.message||String(e),approved:false,status:"Error"}; analyses.push(a);
+     box.innerHTML=`<div class="top"><div><div class="name">❌ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">Error</span></div><p class="err">No se pudo analizar: ${esc(e.message||e)}</p><p class="small">El lote continúa con el siguiente archivo.</p>`;
    }
-   const done=i+1;
-   batchBar.style.width=Math.round((done/total)*100)+"%";
-   batchDetail.textContent=`Completados: ${done} de ${total}.`;
+   updateBatch(i+1,files.length,`Completado ${i+1} de ${files.length}`);
+   renderSummary();
  }
- const ok=analyses.filter(a=>!a.error).length, errors=analyses.length-ok;
- batchStatus.textContent=`Lote terminado: ${total} archivo(s) procesado(s).`;
- batchDetail.textContent=`${ok} correctos${errors?` · ${errors} con error`:""}. Ningún archivo ha sido modificado.`;
- batchBar.style.width="100%";
- results.insertAdjacentHTML("afterbegin",`<div class="card batch-summary">
-   <div class="field"><div class="label">Archivos</div><div class="value">${total}</div></div>
-   <div class="field"><div class="label">Analizados</div><div class="value">${ok}</div></div>
-   <div class="field"><div class="label">Con error</div><div class="value">${errors}</div></div>
-   <div class="field"><div class="label">Modificados</div><div class="value">0</div></div>
- </div>`);
- analyzeBtn.disabled=false; reportBtn.disabled=!analyses.length;
+ isAnalyzing=false; clearBtn.disabled=false; analyzeBtn.disabled=false; renderSummary(); updateBatch(files.length,files.length,`Lote terminado: ${analyses.length} archivo(s) procesado(s).`);
 }
+window.approveOne=function(i){
+ const a=analyses[i]; if(!a||a.error)return;
+ a.approved=true; a.status="Aprobado";
+ const box=$("r"+i); if(box){const badge=box.querySelector(".statusBadge");if(badge)badge.textContent="Aprobado";const buttons=box.querySelectorAll("button");buttons.forEach(b=>{if(b.textContent.includes("Aprobar"))b.disabled=true;});}
+ renderSummary();
+};
+function approveAll(){analyses.forEach((a,i)=>{if(!a.error&&!a.approved)approveOne(i);});renderSummary();}
 window.saveEdit=function(i,btn){
  const box=btn.closest(".file"),a=analyses[i];
  a.c.cat=box.querySelector(".ecat").value;
  a.p.name=box.querySelector(".ename").value;
  a.p.dest=box.querySelector(".edest").value;
+ a.status="Pendiente de revisión"; a.approved=false;
+ const badge=box.querySelector(".statusBadge"); if(badge)badge.textContent="Pendiente de revisión";
+ renderSummary();
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
 }
 function exportReport(){
- let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS
-MODO SEGURO: no se han realizado modificaciones.
-
-";
- analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"
- Categoría: "+a.c.cat+"
- Nuevo nombre: "+a.p.name+"
- Destino: "+a.p.dest+"
- Confianza: "+a.c.confidence+"%
- Método: "+a.r.method+"
- Explicación: "+a.c.why+"
- Texto recuperado: "+a.r.text.length+" caracteres
- Aprobada para futura ejecución: No
-
-";});
+ let out="ORGANIZADOR IA V1.5 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Estado: "+(a.error?"ERROR":(a.approved?"APROBADO":"PENDIENTE DE REVISIÓN"))+"\n Aprobada para futura ejecución: "+(a.approved?"Sí":"No")+"\n Error: "+(a.error||"Ninguno")+"\n\n";});
  const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_6.txt";a.click();URL.revokeObjectURL(url);
 }
 </script>
