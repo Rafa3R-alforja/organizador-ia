@@ -60,7 +60,8 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 
 <script>
 const $=id=>document.getElementById(id);
-const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");\nconst batchPanel=$("batchPanel"), batchStatus=$("batchStatus"), batchBar=$("batchBar"), batchDetail=$("batchDetail");
+const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
+const batchPanel=$("batchPanel"), batchStatus=$("batchStatus"), batchBar=$("batchBar"), batchDetail=$("batchDetail");
 const selectBtn=$("selectBtn");
 selectBtn.addEventListener("click",()=>filesInput.click());
 let files=[], analyses=[];
@@ -147,7 +148,8 @@ function detectPerson(n){
 }
 function detectPlate(n){const m=n.match(/\b\d{4}[BCDFGHJKLMNPRSTVWXYZ]{3}\b/i);return m?m[0].toUpperCase():"";}
 function detectOrganism(n){
- const patterns=[/(?:organismo|entidad|centro|empresa)\s*[:\-]\s*([A-ZÁÉÍÓÚÑ][^\n,.;]{2,60})/i,/\b(DGT|ITV|SITVAL|TRÁFICO|TRAFICO)\b/i];
+ const patterns=[/(?:organismo|entidad|centro|empresa)\s*[:\-]\s*([A-ZÁÉÍÓÚÑ][^
+,.;]{2,60})/i,/\b(DGT|ITV|SITVAL|TRÁFICO|TRAFICO)\b/i];
  for(const p of patterns){const m=n.match(p);if(m)return (m[1]||m[0]).trim();}
  return "";
 }
@@ -182,7 +184,10 @@ async function readPdf(file,progress){
  const buffer=await file.arrayBuffer();
  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
  let text="", max=Math.min(pdf.numPages,30);
- for(let n=1;n<=max;n++){progress("Leyendo página "+n+" de "+max);let p=await pdf.getPage(n),c=await p.getTextContent();text+="\n\n--- Página "+n+" ---\n"+c.items.map(x=>x.str||"").join(" ");}
+ for(let n=1;n<=max;n++){progress("Leyendo página "+n+" de "+max);let p=await pdf.getPage(n),c=await p.getTextContent();text+="
+
+--- Página "+n+" ---
+"+c.items.map(x=>x.str||"").join(" ");}
  return {text:text.trim(),pages:pdf.numPages,method:"Texto PDF"};
 }
 async function ocrPdf(file,progress){
@@ -190,7 +195,10 @@ async function ocrPdf(file,progress){
  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
  let text="",max=Math.min(pdf.numPages,30);
  const worker=await Tesseract.createWorker("spa",1,{logger:m=>{if(m.status)progress("OCR: "+m.status+" "+Math.round((m.progress||0)*100)+"%");}});
- for(let n=1;n<=max;n++){progress("OCR página "+n+" de "+max);let p=await pdf.getPage(n),v=p.getViewport({scale:2}),canvas=document.createElement("canvas");canvas.width=Math.ceil(v.width);canvas.height=Math.ceil(v.height);await p.render({canvasContext:canvas.getContext("2d"),viewport:v}).promise;let r=await worker.recognize(canvas);text+="\n\n--- Página "+n+" ---\n"+(r.data.text||"");}
+ for(let n=1;n<=max;n++){progress("OCR página "+n+" de "+max);let p=await pdf.getPage(n),v=p.getViewport({scale:2}),canvas=document.createElement("canvas");canvas.width=Math.ceil(v.width);canvas.height=Math.ceil(v.height);await p.render({canvasContext:canvas.getContext("2d"),viewport:v}).promise;let r=await worker.recognize(canvas);text+="
+
+--- Página "+n+" ---
+"+(r.data.text||"");}
  await worker.terminate(); return {text:text.trim(),pages:pdf.numPages,method:"OCR de PDF"};
 }
 async function readImage(file,progress){
@@ -283,8 +291,21 @@ window.saveEdit=function(i,btn){
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
 }
 function exportReport(){
- let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
- analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
+ let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS
+MODO SEGURO: no se han realizado modificaciones.
+
+";
+ analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"
+ Categoría: "+a.c.cat+"
+ Nuevo nombre: "+a.p.name+"
+ Destino: "+a.p.dest+"
+ Confianza: "+a.c.confidence+"%
+ Método: "+a.r.method+"
+ Explicación: "+a.c.why+"
+ Texto recuperado: "+a.r.text.length+" caracteres
+ Aprobada para futura ejecución: No
+
+";});
  const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_6.txt";a.click();URL.revokeObjectURL(url);
 }
 </script>
