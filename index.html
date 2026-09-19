@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173b7a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Organizador IA V1.5</title>
+<title>Organizador IA V1.6</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f6fb;color:#17202a}
 header{background:#173b7a;color:white;padding:18px 16px;position:sticky;top:0;z-index:5}
@@ -19,11 +19,11 @@ input[type=file]{display:none}.safe{background:#e9f7ef;color:#17663a;border-radi
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:12px}.field{background:#f7f9fc;padding:10px;border-radius:10px}.label{font-size:11px;color:#667085;text-transform:uppercase}.value{font-weight:700;margin-top:3px;overflow-wrap:anywhere}
 pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;background:#f7f9fc;border-radius:10px;padding:10px;font-size:12px}
 .badge{display:inline-block;border-radius:99px;padding:4px 8px;background:#edf2ff;color:#173b7a;font-size:12px;font-weight:700}
-.small{font-size:12px;color:#667085}.status{font-weight:700}.hidden{display:none}
+.small{font-size:12px;color:#667085}.batch-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:10px}.batch-summary .field{padding:9px}.status{font-weight:700}.hidden{display:none}
 </style>
 </head>
 <body>
-<header><h1>📂 Organizador IA V1.5</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
+<header><h1>📂 Organizador IA V1.6</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
 <main>
 <div class="card">
 <div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
@@ -37,6 +37,11 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <button id="categoriesBtn" class="secondary" type="button">⚙️ Categorías</button>
 </div>
 <div id="selection" class="small">Ningún archivo seleccionado.</div>
+<div id="batchPanel" class="hidden" style="margin-top:10px">
+  <div class="small"><b id="batchStatus">Lote preparado.</b></div>
+  <div class="progress"><div id="batchBar" class="bar"></div></div>
+  <div class="small" id="batchDetail" style="margin-top:5px"></div>
+</div>
 </div>
 <div id="categoriesPanel" class="card hidden">
 <h2 style="margin-top:0">⚙️ Categorías de clasificación</h2>
@@ -55,7 +60,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 
 <script>
 const $=id=>document.getElementById(id);
-const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
+const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");\nconst batchPanel=$("batchPanel"), batchStatus=$("batchStatus"), batchBar=$("batchBar"), batchDetail=$("batchDetail");
 const selectBtn=$("selectBtn");
 selectBtn.addEventListener("click",()=>filesInput.click());
 let files=[], analyses=[];
@@ -79,14 +84,24 @@ renderCategories();
 
 selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
 
-filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; renderSelection();});
-clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;});
+filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; renderSelection();});
+clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;batchPanel.classList.add("hidden");});
 analyzeBtn.addEventListener("click",analyzeAll);
 reportBtn.addEventListener("click",exportReport);
 
 function renderSelection(){
- selection.textContent=files.length?`${files.length} archivo(s) seleccionado(s).`:"Ningún archivo seleccionado.";
- analyzeBtn.disabled=!files.length;
+ if(!files.length){
+   selection.textContent="Ningún archivo seleccionado.";
+   analyzeBtn.disabled=true;
+   batchPanel.classList.add("hidden");
+   return;
+ }
+ selection.textContent=`${files.length} archivo(s) seleccionado(s). ${files.length>1?"Se analizarán automáticamente uno detrás de otro.":"Listo para analizar."}`;
+ analyzeBtn.disabled=false;
+ batchPanel.classList.remove("hidden");
+ batchStatus.textContent=`Lote preparado: ${files.length} archivo(s).`;
+ batchBar.style.width="0%";
+ batchDetail.textContent="Pulsa «Analizar» para comenzar.";
 }
 
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
@@ -201,15 +216,19 @@ async function extract(file,progress){
 }
 async function analyzeAll(){
  results.innerHTML=""; analyses=[]; reportBtn.disabled=true; analyzeBtn.disabled=true;
- for(let i=0;i<files.length;i++){
+ batchPanel.classList.remove("hidden");
+ const total=files.length;
+ for(let i=0;i<total;i++){
    const file=files[i], id="r"+i;
+   batchStatus.textContent=`Analizando ${i+1} de ${total}`;
+   batchDetail.textContent=`${file.name} · ${Math.round((i/total)*100)}% del lote`;
+   batchBar.style.width=Math.round((i/total)*100)+"%";
    results.insertAdjacentHTML("beforeend",`<div class="card file" id="${id}"><div class="name">⏳ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div><div class="status">Preparando análisis…</div><div class="progress"><div class="bar"></div></div></div>`);
    const box=$(id), status=box.querySelector(".status"), bar=box.querySelector(".bar");
    try{
      const r=await extract(file,msg=>{status.textContent=msg;bar.style.width="70%";});
      const c=classify(r.text,file.name), p=proposal(file.name,r.text,c.cat);
-     const a={file,r,c,p};
-     analyses.push(a);bar.style.width="100%";
+     const a={file,r,c,p}; analyses.push(a); bar.style.width="100%";
      box.innerHTML=`<div class="top"><div><div class="name">📄 ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">${c.confidence}% confianza</span></div>
      <div class="grid">
       <div class="field"><div class="label">Categoría propuesta</div><div class="value">${esc(c.cat)}</div></div>
@@ -238,10 +257,23 @@ async function analyzeAll(){
      </div>`;
    }catch(e){
      analyses.push({file,r:{text:"",method:"Error",pages:0},c:{cat:"Revisar",confidence:0,why:"No se pudo analizar el archivo.",hits:[]},p:{name:file.name,dest:"/Organizado IA/Revisar"},error:e.message});
-     box.innerHTML=`<div class="name">❌ ${esc(file.name)}</div><p class="err">No se pudo analizar: ${esc(e.message||e)}</p>`;
+     box.innerHTML=`<div class="name">❌ ${esc(file.name)}</div><p>No se pudo analizar: ${esc(e.message||e)}</p>`;
    }
+   const done=i+1;
+   batchBar.style.width=Math.round((done/total)*100)+"%";
+   batchDetail.textContent=`Completados: ${done} de ${total}.`;
  }
- analyzeBtn.disabled=false;reportBtn.disabled=!analyses.length;
+ const ok=analyses.filter(a=>!a.error).length, errors=analyses.length-ok;
+ batchStatus.textContent=`Lote terminado: ${total} archivo(s) procesado(s).`;
+ batchDetail.textContent=`${ok} correctos${errors?` · ${errors} con error`:""}. Ningún archivo ha sido modificado.`;
+ batchBar.style.width="100%";
+ results.insertAdjacentHTML("afterbegin",`<div class="card batch-summary">
+   <div class="field"><div class="label">Archivos</div><div class="value">${total}</div></div>
+   <div class="field"><div class="label">Analizados</div><div class="value">${ok}</div></div>
+   <div class="field"><div class="label">Con error</div><div class="value">${errors}</div></div>
+   <div class="field"><div class="label">Modificados</div><div class="value">0</div></div>
+ </div>`);
+ analyzeBtn.disabled=false; reportBtn.disabled=!analyses.length;
 }
 window.saveEdit=function(i,btn){
  const box=btn.closest(".file"),a=analyses[i];
@@ -251,9 +283,9 @@ window.saveEdit=function(i,btn){
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
 }
 function exportReport(){
- let out="ORGANIZADOR IA V1.5 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
  analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
- const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_4.txt";a.click();URL.revokeObjectURL(url);
+ const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_6.txt";a.click();URL.revokeObjectURL(url);
 }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
