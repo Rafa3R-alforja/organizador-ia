@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173b7a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Organizador IA V1.4</title>
+<title>Organizador IA V1.5</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f6fb;color:#17202a}
 header{background:#173b7a;color:white;padding:18px 16px;position:sticky;top:0;z-index:5}
@@ -23,7 +23,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 </style>
 </head>
 <body>
-<header><h1>📂 Organizador IA V1.4</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
+<header><h1>📂 Organizador IA V1.5</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
 <main>
 <div class="card">
 <div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
@@ -40,7 +40,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 </div>
 <div id="categoriesPanel" class="card hidden">
 <h2 style="margin-top:0">⚙️ Categorías de clasificación</h2>
-<p class="small">Las categorías incorporadas vienen de serie. Puedes añadir tus propias categorías y palabras clave; se guardan en este dispositivo y se usan en los siguientes análisis.</p>
+<p class="small">Las categorías incorporadas vienen de serie. Puedes añadir tus propias categorías y palabras clave; se guardan en este dispositivo y tienen prioridad cuando coinciden claramente con el documento.</p>
 <div id="categoryList"></div>
 <div class="grid">
 <div class="field"><div class="label">Nueva categoría</div><input id="newCat" placeholder="Ej.: Seguros" style="width:100%;padding:9px"></div>
@@ -96,34 +96,69 @@ function dateText(s){let m=s.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b|\b
 function expediente(s){let m=s.match(/\b(?:exp(?:ediente)?|expte)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9\/.-]{2,})/i);return m?m[1]:"";}
 function classify(text,name){
  const s=(name+" "+text).toLowerCase();
- const rules=[...BUILTIN_RULES,...getCustomCategories().map(c=>[c.name,c.keywords,c.why])];
+ const custom=getCustomCategories();
  let best=null;
- for(const [cat,words,why] of rules){let hits=words.filter(w=>s.includes(w)); if(hits.length&&(!best||hits.length>best.hits))best={cat,hits:hits.length,why,words:hits};}
- if(!best&&/solicitud/.test(s)&&/expediente|registro de entrada|resolución|resolucion|trámite|tramite/.test(s))best={cat:"Expedientes",hits:1,why:"La solicitud aparece vinculada a un expediente o trámite.",words:["solicitud"]};
+ for(const c of custom){
+   const hits=c.keywords.filter(w=>w && s.includes(w.toLowerCase()));
+   if(hits.length){
+     const score=100+hits.length*20;
+     if(!best||score>best.score)best={cat:c.name,hits:hits.length,score,why:c.why||("Documento clasificado como "+c.name+"."),words:hits,custom:true};
+   }
+ }
+ for(const [cat,words,why] of BUILTIN_RULES){
+   const hits=words.filter(w=>s.includes(w.toLowerCase()));
+   if(hits.length){
+     const score=hits.length*20;
+     if(!best||score>best.score)best={cat,hits:hits.length,score,why,words:hits,custom:false};
+   }
+ }
+ if(!best&&/solicitud/.test(s)&&/expediente|registro de entrada|resolución|resolucion|trámite|tramite/.test(s))
+   best={cat:"Expedientes",hits:1,score:20,why:"La solicitud aparece vinculada a un expediente o trámite.",words:["solicitud"],custom:false};
  if(!best)return {cat:"Revisar",confidence:30,why:"No se han encontrado suficientes indicadores para una clasificación automática.",hits:[]};
- return {cat:best.cat,confidence:Math.min(96,48+best.hits*10),why:best.why+" Indicadores: "+best.words.join(", ")+".",hits:best.words};
+ const confidence=Math.min(98,(best.custom?68:48)+best.hits*10);
+ return {cat:best.cat,confidence,why:(best.custom?"Coincide con una categoría personalizada. ":"")+best.why+" Indicadores: "+best.words.join(", ")+".",hits:best.words,custom:best.custom};
 }
 
+function normalizeDateForName(d){
+ if(!d)return "";
+ const m=d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+ return m?`${m[3]}-${m[2]}-${m[1]}`:d;
+}
+function cleanPerson(v){return v.replace(/\s+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase());}
+function detectPerson(n){
+ let m=n.match(/(?:D\.?|Dña\.?|Don|Doña)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ]+){1,3})/);
+ if(!m)m=n.match(/\b([A-ZÁÉÍÓÚÑ]{2,}\s+[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2})\b/);
+ return m&&m[1]&&m[1].length<70?cleanPerson(m[1]):"";
+}
+function detectPlate(n){const m=n.match(/\b\d{4}[BCDFGHJKLMNPRSTVWXYZ]{3}\b/i);return m?m[0].toUpperCase():"";}
+function detectOrganism(n){
+ const patterns=[/(?:organismo|entidad|centro|empresa)\s*[:\-]\s*([A-ZÁÉÍÓÚÑ][^\n,.;]{2,60})/i,/\b(DGT|ITV|SITVAL|TRÁFICO|TRAFICO)\b/i];
+ for(const p of patterns){const m=n.match(p);if(m)return (m[1]||m[0]).trim();}
+ return "";
+}
 function proposal(name,text,cat){
- const d=dateText(text+" "+name), ex=expediente(text+" "+name);
- const n=(text+" "+name).replace(/---\s*Página\s*\d+\s*---/gi," ").replace(/\s+/g," ").trim();
- const lower=n.toLowerCase();
+ const full=(text+" "+name).replace(/---\s*Página\s*\d+\s*---/gi," ").replace(/\s+/g," ").trim();
+ const lower=full.toLowerCase(), d=normalizeDateForName(dateText(full)), ex=expediente(full);
+ const persona=detectPerson(full), matricula=detectPlate(full), organismo=detectOrganism(full);
  let tipo="";
- if(/airbag|cambio de airbag|campaña.*airbag/.test(lower))tipo="Aviso cambio airbag";
+ if(/airbag|cambio de airbag|sustitución de airbag|sustitucion de airbag|campaña.*airbag/.test(lower))tipo="Aviso cambio airbag";
  else if(/factura|base imponible|iva|importe total/.test(lower))tipo="Factura";
  else if(/contrato|cláusula|clausula/.test(lower))tipo="Contrato";
  else if(/cita previa|itv|localizador/.test(lower))tipo="Cita ITV";
  else if(/protocolo|procedimiento|instrucción|instruccion/.test(lower))tipo="Protocolo";
  else if(cat==="Expedientes")tipo="Documento de expediente";
- let persona="",m=n.match(/(?:D\.?|Dña\.?|Don|Doña)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ]+){1,3})/);
- if(!m)m=n.match(/\b([A-ZÁÉÍÓÚÑ]{2,}\s+[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){0,2})\b/);
- if(m&&m[1]&&m[1].length<70)persona=m[1].replace(/\b\w/g,c=>c.toUpperCase());
- let extn=name.includes(".")?"."+name.split(".").pop():"",parts=[];
- if(d)parts.push(d.slice(0,10)); if(ex)parts.push("Exp "+ex); if(tipo)parts.push(tipo);
- if(persona&&!parts.join(" ").toLowerCase().includes(persona.toLowerCase()))parts.push(persona);
- if(!parts.length){let base=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').replace(/[^\p{L}\p{N}\s.-]/gu,'').trim();parts.push(base||cat);}
- let newName=parts.join(" - ").replace(/\s+/g," ").trim().slice(0,145)+extn;
- return {name:newName,dest:"/Organizado IA/"+cat+(ex?"/Expediente "+ex:"")};
+ else if(cat!=="Revisar")tipo=cat;
+ const parts=[];
+ if(d)parts.push(d); if(ex)parts.push("Exp "+ex); if(tipo)parts.push(tipo);
+ if(persona)parts.push(persona); if(matricula)parts.push(matricula);
+ if(organismo&&!parts.join(" ").toLowerCase().includes(organismo.toLowerCase()))parts.push(organismo);
+ if(!parts.length){
+   let base=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').replace(/[^\p{L}\p{N}\s.-]/gu,'').trim();
+   parts.push(base||cat);
+ }
+ const extn=name.includes(".")?"."+name.split(".").pop():"";
+ const newName=parts.join(" - ").replace(/\s+/g," ").trim().slice(0,145)+extn;
+ return {name:newName,dest:"/Organizado IA/"+cat+(ex?"/Expediente "+ex:""),meta:{date:d,expediente:ex,persona,matricula,organismo,tipo}};
 }
 
 
@@ -184,6 +219,13 @@ async function analyzeAll(){
      </div>
      <p><b>💡 Explicación:</b> ${esc(c.why)}</p>
      <p class="small">Texto recuperado: ${r.text.length} caracteres · ${r.pages} página(s).</p>
+     <div class="small"><b>Datos detectados:</b> ${esc([
+       p.meta?.date?("Fecha: "+p.meta.date):"",
+       p.meta?.expediente?("Expediente: "+p.meta.expediente):"",
+       p.meta?.persona?("Persona: "+p.meta.persona):"",
+       p.meta?.matricula?("Matrícula: "+p.meta.matricula):"",
+       p.meta?.organismo?("Organismo: "+p.meta.organismo):""
+     ].filter(Boolean).join(" · ")||"No se han detectado datos adicionales.")}</div>
      <details><summary>Ver contenido recuperado</summary><pre>${esc(r.text||"No se ha recuperado texto.")}</pre></details>
      <div class="actions"><button class="secondary" onclick="this.parentElement.parentElement.querySelector('.edit').classList.toggle('hidden')">✏️ Revisar propuesta</button></div>
      <div class="edit hidden">
@@ -209,7 +251,7 @@ window.saveEdit=function(i,btn){
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
 }
 function exportReport(){
- let out="ORGANIZADOR IA V1.4 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ let out="ORGANIZADOR IA V1.5 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
  analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
  const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_4.txt";a.click();URL.revokeObjectURL(url);
 }
