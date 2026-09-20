@@ -35,6 +35,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <input id="addFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.txt,.csv,.md,.json,.xml,.html,.htm,.docx" style="display:none">
 <button id="analyze" disabled>🔎 Analizar lote</button>
 <button id="approveAll" class="secondary" disabled>✅ Aprobar lote</button>
+<button id="executeApproved" disabled>▶️ Ejecutar aprobados</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
 <button id="report" class="secondary" disabled>📋 Exportar informe</button>
 <button id="categoriesBtn" class="secondary" type="button">⚙️ Categorías</button>
@@ -42,6 +43,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <div id="selection" class="small">Ningún archivo seleccionado.</div>
 <div id="batchProgress" class="hidden" style="margin-top:12px"><div class="top"><b>Progreso del lote</b><span id="batchPercent" class="small">0%</span></div><div class="progress"><div id="batchBar" class="bar"></div></div><div id="batchStatus" class="small" style="margin-top:5px">Preparado.</div></div>
 <div id="summary" class="hidden" style="margin-top:12px"></div>
+<div id="execution" class="hidden card" style="margin-top:12px"></div>
 </div>
 <div id="categoriesPanel" class="card hidden">
 <h2 style="margin-top:0">⚙️ Categorías de clasificación</h2>
@@ -61,7 +63,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <script>
 const $=id=>document.getElementById(id);
 const filesInput=$("files"), addFileInput=$("addFile"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
-const selectBtn=$("selectBtn"), addBtn=$("addBtn"), approveAllBtn=$("approveAll"), batchProgress=$("batchProgress"), batchBar=$("batchBar"), batchPercent=$("batchPercent"), batchStatus=$("batchStatus"), summary=$("summary");
+const selectBtn=$("selectBtn"), addBtn=$("addBtn"), approveAllBtn=$("approveAll"), executeApprovedBtn=$("executeApproved"), batchProgress=$("batchProgress"), batchBar=$("batchBar"), batchPercent=$("batchPercent"), batchStatus=$("batchStatus"), summary=$("summary");
 selectBtn.addEventListener("click",()=>{filesInput.value="";filesInput.click()});
 addBtn.addEventListener("click",()=>{addFileInput.value="";addFileInput.click()});
 let files=[], analyses=[], isAnalyzing=false;
@@ -98,16 +100,19 @@ function appendFiles(incoming){
   results.innerHTML="";
   reportBtn.disabled=true;
   approveAllBtn.disabled=true;
+  executeApprovedBtn.disabled=true;
+  execution.classList.add("hidden");
   summary.classList.add("hidden");
   batchProgress.classList.add("hidden");
   renderSelection();
 }
 filesInput.addEventListener("change",()=>{appendFiles([...filesInput.files]);filesInput.value="";});
 addFileInput.addEventListener("change",()=>{appendFiles([...addFileInput.files]);addFileInput.value="";});
-clearBtn.addEventListener("click",()=>{if(isAnalyzing)return;files=[];analyses=[];filesInput.value="";addFileInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;approveAllBtn.disabled=true;summary.classList.add("hidden");batchProgress.classList.add("hidden");});
+clearBtn.addEventListener("click",()=>{if(isAnalyzing)return;files=[];analyses=[];filesInput.value="";addFileInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;approveAllBtn.disabled=true;executeApprovedBtn.disabled=true;summary.classList.add("hidden");batchProgress.classList.add("hidden");execution.classList.add("hidden");});
 analyzeBtn.addEventListener("click",analyzeAll);
 approveAllBtn.addEventListener("click",approveAll);
 reportBtn.addEventListener("click",exportReport);
+executeApprovedBtn.addEventListener("click",executeApproved);
 
 function renderSelection(){
  selection.textContent=files.length?`${files.length} archivo(s) preparado(s) para el lote. Puedes pulsar «Añadir archivo al lote» para incorporar más.`:"Ningún archivo seleccionado.";
@@ -117,7 +122,7 @@ function updateBatch(done,total,msg){const pct=total?Math.round(done/total*100):
 function renderSummary(){
  const total=analyses.length, ok=analyses.filter(a=>!a.error).length, err=analyses.filter(a=>a.error).length, approved=analyses.filter(a=>a.approved).length, review=analyses.filter(a=>!a.error&&!a.approved).length;
  summary.classList.remove("hidden");summary.innerHTML=`<div class="field"><b>Resumen del lote</b><div class="small" style="margin-top:6px">Total: ${total} · Analizados: ${ok} · Errores: ${err} · Aprobados: ${approved} · Pendientes de revisión: ${review}</div></div>`;
- reportBtn.disabled=!total; approveAllBtn.disabled=!ok||isAnalyzing||approved===ok;
+ reportBtn.disabled=!total; approveAllBtn.disabled=!ok||isAnalyzing||approved===ok; executeApprovedBtn.disabled=isAnalyzing||approved===0;
 }
 
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
@@ -232,7 +237,7 @@ async function extract(file,progress){
 }
 async function analyzeAll(){
  if(isAnalyzing||!files.length)return;
- isAnalyzing=true; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; approveAllBtn.disabled=true; analyzeBtn.disabled=true; clearBtn.disabled=true;
+ isAnalyzing=true; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; approveAllBtn.disabled=true; executeApprovedBtn.disabled=true; execution.classList.add("hidden"); analyzeBtn.disabled=true; clearBtn.disabled=true;
  updateBatch(0,files.length,"Iniciando análisis del lote…");
  for(let i=0;i<files.length;i++){
    const file=files[i], id="r"+i;
@@ -275,6 +280,57 @@ window.saveEdit=function(i,btn){
  const badge=box.querySelector(".statusBadge"); if(badge)badge.textContent="Pendiente de revisión";
  renderSummary();
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
+}
+async function executeApproved(){
+ const approved=analyses.filter(a=>a.approved&&!a.error);
+ if(!approved.length){alert("No hay documentos aprobados para ejecutar.");return;}
+ const ok=confirm("Se van a COPIAR los documentos aprobados a la carpeta que elijas. Los originales NO se eliminarán ni modificarán. ¿Continuar?");
+ if(!ok)return;
+ if(!window.showDirectoryPicker){
+   alert("Este navegador no permite seleccionar una carpeta de destino desde la aplicación. La ejecución segura requiere un navegador compatible con File System Access API.");
+   return;
+ }
+ let root;
+ try{root=await window.showDirectoryPicker({mode:"readwrite"});}
+ catch(e){if(e&&e.name!=="AbortError")alert("No se pudo seleccionar la carpeta de destino: "+(e.message||e));return;}
+ execution.classList.remove("hidden");
+ execution.innerHTML='<div class="safe">🔐 EJECUCIÓN SEGURA: se crearán copias organizadas. Los originales permanecerán intactos.</div><div id="execProgress" style="margin-top:10px"></div><div id="execResults" style="margin-top:10px"></div>';
+ const ep=$("execProgress"), er=$("execResults"); let done=0,created=0,errors=0;
+ for(const a of approved){
+   done++; const name=safeFileName(a.p.name||a.file.name), category=safeFolderName(a.c.cat||"Revisar"), destText=a.p.dest||"Organizado IA";
+   try{
+     let dir=root;
+     const parts=categoryPath(destText,category);
+     for(const part of parts) dir=await dir.getDirectoryHandle(part,{create:true});
+     const target=await uniqueFileHandle(dir,name);
+     const writable=await target.createWritable();
+     await writable.write(await a.file.arrayBuffer()); await writable.close();
+     created++; a.execution={status:"Ejecutado",name,destination:parts.join("/")+"/"+name};
+     er.insertAdjacentHTML("beforeend",'<div class="field">✅ <b>'+esc(a.file.name)+'</b> → '+esc(a.execution.destination)+'</div>');
+   }catch(e){
+     errors++; a.execution={status:"Error",error:e.message||String(e)};
+     er.insertAdjacentHTML("beforeend",'<div class="field">❌ <b>'+esc(a.file.name)+'</b>: '+esc(e.message||e)+'</div>');
+   }
+   ep.innerHTML='<b>Progreso de ejecución:</b> '+done+'/'+approved.length+' · Creados: '+created+' · Errores: '+errors+'<div class="progress"><div class="bar" style="width:'+Math.round(done/approved.length*100)+'%"></div></div>';
+ }
+ er.insertAdjacentHTML("afterbegin",'<p><b>Resultado:</b> '+created+' copia(s) creada(s) · '+errors+' error(es). Los originales no se han eliminado.</p>');
+}
+function safeFolderName(s){return String(s||"Revisar").replace(/[\\/:*?"<>|]/g,"-").replace(/\s+/g," ").trim().slice(0,80)||"Revisar";}
+function safeFileName(s){return String(s||"documento").replace(/[\\/:*?"<>|]/g,"-").replace(/\s+/g," ").trim().slice(0,180)||"documento";}
+function categoryPath(dest,category){
+ let raw=String(dest||"").replace(/\\/g,"/").split("/").map(x=>x.trim()).filter(Boolean).filter(x=>x!==".");
+ raw=raw.map(safeFolderName).slice(0,8);
+ if(!raw.length)raw=["Organizado IA"];
+ if(raw[raw.length-1].toLowerCase()!==category.toLowerCase())raw.push(category);
+ return raw;
+}
+async function uniqueFileHandle(dir,name){
+ const dot=name.lastIndexOf("."), base=dot>0?name.slice(0,dot):name, extn=dot>0?name.slice(dot):"";
+ let candidate=name, n=1;
+ while(true){
+   try{await dir.getFileHandle(candidate,{create:false}); candidate=base+" ("+(++n)+")"+extn;}
+   catch(e){if(e.name==="NotFoundError")return await dir.getFileHandle(candidate,{create:true}); throw e;}
+ }
 }
 function exportReport(){
  let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
