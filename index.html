@@ -29,9 +29,10 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
 <p>Selecciona documentos, imágenes o textos. La aplicación analizará el contenido y propondrá una organización para que tú la revises.</p>
 <div class="actions">
-<button id="selectBtn" type="button">📂 Seleccionar archivos</button>
-<button id="addBtn" class="secondary" type="button">➕ Añadir archivos</button>
-<input id="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.txt,.csv,.md,.json,.xml,.html,.htm,.docx">
+<button id="selectBtn" type="button">📂 Seleccionar varios</button>
+<button id="addBtn" class="secondary" type="button">➕ Añadir archivo al lote</button>
+<input id="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.txt,.csv,.md,.json,.xml,.html,.htm,.docx" style="display:none">
+<input id="addFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.txt,.csv,.md,.json,.xml,.html,.htm,.docx" style="display:none">
 <button id="analyze" disabled>🔎 Analizar lote</button>
 <button id="approveAll" class="secondary" disabled>✅ Aprobar lote</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
@@ -59,10 +60,10 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 
 <script>
 const $=id=>document.getElementById(id);
-const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
+const filesInput=$("files"), addFileInput=$("addFile"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
 const selectBtn=$("selectBtn"), addBtn=$("addBtn"), approveAllBtn=$("approveAll"), batchProgress=$("batchProgress"), batchBar=$("batchBar"), batchPercent=$("batchPercent"), batchStatus=$("batchStatus"), summary=$("summary");
 selectBtn.addEventListener("click",()=>{filesInput.value="";filesInput.click()});
-addBtn.addEventListener("click",()=>{filesInput.value="";filesInput.click()});
+addBtn.addEventListener("click",()=>{addFileInput.value="";addFileInput.click()});
 let files=[], analyses=[], isAnalyzing=false;
 const BUILTIN_RULES=[
  ["Vehículos / Tráfico",["airbag","cambio de airbag","sustitución de airbag","sustitucion de airbag","campaña airbag","campana airbag","aviso cambio airbag"],"Contiene referencias a un aviso o campaña relacionada con airbags o vehículos."],
@@ -82,13 +83,16 @@ addCategoryBtn.addEventListener("click",()=>{const name=$("newCat").value.trim()
 resetCategoriesBtn.addEventListener("click",()=>{if(confirm("¿Eliminar todas las categorías añadidas por ti? Las categorías incorporadas no se borrarán.")){localStorage.removeItem("organizadorIA_customCategories");renderCategories()}});
 renderCategories();
 
-selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
+selection.textContent="Aplicación cargada. Puedes seleccionar varios archivos o añadirlos uno a uno al lote.";
 
-filesInput.addEventListener("change",()=>{
-  const incoming=[...filesInput.files];
+function appendFiles(incoming){
   if(!incoming.length)return;
   const existing=new Set(files.map(f=>f.name+"|"+f.size+"|"+f.lastModified));
   const added=incoming.filter(f=>!existing.has(f.name+"|"+f.size+"|"+f.lastModified));
+  if(!added.length){
+    selection.textContent=`No se añadió ningún archivo nuevo. El lote ya contiene esos archivos.`;
+    return;
+  }
   files=[...files,...added];
   analyses=[];
   results.innerHTML="";
@@ -96,16 +100,17 @@ filesInput.addEventListener("change",()=>{
   approveAllBtn.disabled=true;
   summary.classList.add("hidden");
   batchProgress.classList.add("hidden");
-  filesInput.value="";
   renderSelection();
-});
-clearBtn.addEventListener("click",()=>{if(isAnalyzing)return;files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;approveAllBtn.disabled=true;summary.classList.add("hidden");batchProgress.classList.add("hidden");});
+}
+filesInput.addEventListener("change",()=>{appendFiles([...filesInput.files]);filesInput.value="";});
+addFileInput.addEventListener("change",()=>{appendFiles([...addFileInput.files]);addFileInput.value="";});
+clearBtn.addEventListener("click",()=>{if(isAnalyzing)return;files=[];analyses=[];filesInput.value="";addFileInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;approveAllBtn.disabled=true;summary.classList.add("hidden");batchProgress.classList.add("hidden");});
 analyzeBtn.addEventListener("click",analyzeAll);
 approveAllBtn.addEventListener("click",approveAll);
 reportBtn.addEventListener("click",exportReport);
 
 function renderSelection(){
- selection.textContent=files.length?`${files.length} archivo(s) preparado(s) para el lote. Puedes pulsar «Añadir archivos» para incorporar más.`:"Ningún archivo seleccionado.";
+ selection.textContent=files.length?`${files.length} archivo(s) preparado(s) para el lote. Puedes pulsar «Añadir archivo al lote» para incorporar más.`:"Ningún archivo seleccionado.";
  analyzeBtn.disabled=!files.length||isAnalyzing;
 }
 function updateBatch(done,total,msg){const pct=total?Math.round(done/total*100):0;batchProgress.classList.remove("hidden");batchBar.style.width=pct+"%";batchPercent.textContent=pct+"%";batchStatus.textContent=msg||"Procesando…";}
