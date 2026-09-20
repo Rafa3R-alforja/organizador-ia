@@ -30,7 +30,8 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <p>Selecciona documentos, imágenes o textos. La aplicación analizará el contenido y propondrá una organización para que tú la revises.</p>
 <div class="actions">
 <button id="selectBtn" type="button">📂 Seleccionar archivos</button>
-<input id="files" type="file" multiple>
+<button id="addBtn" class="secondary" type="button">➕ Añadir archivos</button>
+<input id="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.txt,.csv,.md,.json,.xml,.html,.htm,.docx">
 <button id="analyze" disabled>🔎 Analizar lote</button>
 <button id="approveAll" class="secondary" disabled>✅ Aprobar lote</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
@@ -59,8 +60,9 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <script>
 const $=id=>document.getElementById(id);
 const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
-const selectBtn=$("selectBtn"), approveAllBtn=$("approveAll"), batchProgress=$("batchProgress"), batchBar=$("batchBar"), batchPercent=$("batchPercent"), batchStatus=$("batchStatus"), summary=$("summary");
-selectBtn.addEventListener("click",()=>filesInput.click());
+const selectBtn=$("selectBtn"), addBtn=$("addBtn"), approveAllBtn=$("approveAll"), batchProgress=$("batchProgress"), batchBar=$("batchBar"), batchPercent=$("batchPercent"), batchStatus=$("batchStatus"), summary=$("summary");
+selectBtn.addEventListener("click",()=>{filesInput.value="";filesInput.click()});
+addBtn.addEventListener("click",()=>{filesInput.value="";filesInput.click()});
 let files=[], analyses=[], isAnalyzing=false;
 const BUILTIN_RULES=[
  ["Vehículos / Tráfico",["airbag","cambio de airbag","sustitución de airbag","sustitucion de airbag","campaña airbag","campana airbag","aviso cambio airbag"],"Contiene referencias a un aviso o campaña relacionada con airbags o vehículos."],
@@ -82,14 +84,28 @@ renderCategories();
 
 selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
 
-filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; approveAllBtn.disabled=true; summary.classList.add("hidden"); batchProgress.classList.add("hidden"); renderSelection();});
+filesInput.addEventListener("change",()=>{
+  const incoming=[...filesInput.files];
+  if(!incoming.length)return;
+  const existing=new Set(files.map(f=>f.name+"|"+f.size+"|"+f.lastModified));
+  const added=incoming.filter(f=>!existing.has(f.name+"|"+f.size+"|"+f.lastModified));
+  files=[...files,...added];
+  analyses=[];
+  results.innerHTML="";
+  reportBtn.disabled=true;
+  approveAllBtn.disabled=true;
+  summary.classList.add("hidden");
+  batchProgress.classList.add("hidden");
+  filesInput.value="";
+  renderSelection();
+});
 clearBtn.addEventListener("click",()=>{if(isAnalyzing)return;files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;approveAllBtn.disabled=true;summary.classList.add("hidden");batchProgress.classList.add("hidden");});
 analyzeBtn.addEventListener("click",analyzeAll);
 approveAllBtn.addEventListener("click",approveAll);
 reportBtn.addEventListener("click",exportReport);
 
 function renderSelection(){
- selection.textContent=files.length?`${files.length} archivo(s) seleccionado(s). El análisis será secuencial y seguro.`:"Ningún archivo seleccionado.";
+ selection.textContent=files.length?`${files.length} archivo(s) preparado(s) para el lote. Puedes pulsar «Añadir archivos» para incorporar más.`:"Ningún archivo seleccionado.";
  analyzeBtn.disabled=!files.length||isAnalyzing;
 }
 function updateBatch(done,total,msg){const pct=total?Math.round(done/total*100):0;batchProgress.classList.remove("hidden");batchBar.style.width=pct+"%";batchPercent.textContent=pct+"%";batchStatus.textContent=msg||"Procesando…";}
@@ -256,7 +272,7 @@ window.saveEdit=function(i,btn){
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
 }
 function exportReport(){
- let out="ORGANIZADOR IA V1.5 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
  analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Estado: "+(a.error?"ERROR":(a.approved?"APROBADO":"PENDIENTE DE REVISIÓN"))+"\n Aprobada para futura ejecución: "+(a.approved?"Sí":"No")+"\n Error: "+(a.error||"Ninguno")+"\n\n";});
  const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_6.txt";a.click();URL.revokeObjectURL(url);
 }
