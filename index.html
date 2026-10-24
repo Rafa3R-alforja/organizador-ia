@@ -145,6 +145,7 @@ function classify(text,name){
    }
  }
  if((/\b(?:factura|invoice)\b/i.test(name)||/\b(?:factura|invoice|base imponible|importe total|n[uú]mero de factura)\b/i.test(text)||(/\.pdf$/i.test(name)&&/\b(?:grip|hesacore|espejos?|cuchillos?\s+arcos|cabecero\s+cama)\b/i.test(name))) && (!best || best.cat!=="Facturas")) best={cat:"Facturas",hits:1,score:75,why:"El nombre o el contenido identifica el archivo como una factura o justificante de compra.",words:["factura/compra"],custom:false};
+ if(/\b(?:albar[aá]n|nota de entrega|delivery note)\b/i.test(s) && (!best || best.cat!=="Albaranes")) best={cat:"Albaranes",hits:1,score:78,why:"El nombre o el contenido identifica un albarán o documento de entrega.",words:["albarán/entrega"],custom:false};
  if(!best&&/solicitud/.test(s)&&/expediente|registro de entrada|resolución|resolucion|trámite|tramite/.test(s))
    best={cat:"Expedientes",hits:1,score:20,why:"La solicitud aparece vinculada a un expediente o trámite.",words:["solicitud"],custom:false};
  if(!best)return {cat:"Revisar",confidence:30,why:"No se han encontrado suficientes indicadores para una clasificación automática.",hits:[]};
@@ -208,6 +209,7 @@ function proposal(name,text,cat){
  let tipo="";
  if(/aviso.{0,35}airbag|airbag.{0,35}(?:cambio|sustituci[oó]n|campa[nñ]a)|campa[nñ]a.{0,35}airbag/.test(lower)) tipo="Aviso cambio airbag";
  else if(/factura|base imponible|importe total|n[uú]mero de factura/.test(lower)) tipo="Factura";
+ else if(/\b(?:albar[aá]n|nota de entrega|delivery note)\b/i.test(lower) || /\balbar[aá]n\b/i.test(name)) tipo="Albaran";
  else if(/resoluci[oó]n(?: administrativa)?|resuelve\s*:/.test(lower)) tipo="Resolución";
  else if(/notificaci[oó]n(?: administrativa)?|se le notifica|queda notificado/.test(lower)) tipo="Notificación";
  else if(/contrato|cl[aá]usula|arrendamiento/.test(lower)) tipo="Contrato";
@@ -231,6 +233,11 @@ function proposal(name,text,cat){
    else if(organismo) parts.push(normalizeFilenamePart(organismo));
    else if(persona) parts.push(normalizeFilenamePart(persona));
  } else {
+   const combinedProduct=(String(name)+" "+String(text||"")).toLowerCase();
+   if(/\bespejos?\b|\bmirror(?:s)?\b/.test(combinedProduct)) {
+     if(/\b3\s*(?:v[ií]as|caras|direcciones)\b|\btres\s*(?:espejos|caras|v[ií]as)\b|\bthree[- ]way\b/.test(combinedProduct)) parts.push("espejo_3_vias_con_ganchos");
+     else parts.push("espejos");
+   }
    if(ex && /expediente|resoluci[oó]n|notificaci[oó]n|solicitud|documento de expediente/i.test(tipo)) parts.push("exp_"+normalizeFilenamePart(ex));
    if(tipo==="Cita ITV" || /veh[ií]culos|tr[aá]fico/i.test(cat)){
      if(matricula) parts.push(normalizeFilenamePart(matricula));
