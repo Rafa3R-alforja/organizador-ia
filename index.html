@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173b7a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Organizador IA V1.8</title>
+<title>Organizador IA V1.9</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f6fb;color:#17202a}
 header{background:#173b7a;color:white;padding:18px 16px;position:sticky;top:0;z-index:5}
@@ -23,7 +23,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 </style>
 </head>
 <body>
-<header><h1>📂 Organizador IA V1.8</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
+<header><h1>📂 Organizador IA V1.9</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
 <main>
 <div class="card">
 <div class="safe">🔒 MODO SEGURO: el análisis nunca modifica los originales. Solo se crean copias cuando tú lo apruebas.</div>
@@ -145,17 +145,42 @@ function detectOrganism(n){
  for(const p of patterns){const m=n.match(p);if(m)return (m[1]||m[0]).trim();}
  return "";
 }
+function normalizeFilenamePart(value, separator="_"){
+ return String(value||"")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g,separator)
+  .replace(new RegExp(separator+"+","g"),separator)
+  .replace(new RegExp("^"+separator+"|"+separator+"$","g"),"");
+}
+function invoiceProductFromFilename(filename){
+ let base=String(filename||"").replace(/\.[^.]+$/,'').toLowerCase();
+ // Remove dates, invoice wording, retailer names, and standalone invoice/reference numbers.
+ base=base.replace(/\b(?:20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]20\d{2})\b/g,' ');
+ base=base.replace(/\b(?:factura|invoice|ticket|compra|pedido|n[uú]mero|num|n[ºo.]?)\b/g,' ');
+ base=base.replace(/\b(?:decathlon|declathon|dechatlon|decathl[oó]n)\b/g,' ');
+ base=base.replace(/\b(?:\d{5,}|[a-z]{1,5}[-/]?\d{4,})\b/gi,' ');
+ return normalizeFilenamePart(base,"_");
+}
+function invoiceProductFromText(text){
+ const patterns=[/(?:descripci[oó]n|concepto|art[ií]culo|producto)\s*[:\-]\s*([^\n.;]{3,90})/i,/(?:detalle de la compra|producto adquirido)\s*[:\-]\s*([^\n.;]{3,90})/i];
+ for(const re of patterns){const m=String(text||"").match(re);if(m&&m[1]){
+  let v=m[1].replace(/\b(?:precio|cantidad|importe|subtotal|iva|total|base imponible)\b.*$/i,'');
+  v=v.replace(/\b\d+[.,]\d{2}\s*(?:€|eur)?\b/gi,' ');
+  const out=normalizeFilenamePart(v,"_");
+  if(out && !/^(?:factura|compra|producto|articulo|varios)$/.test(out))return out;
+ }}
+ return "";
+}
 function proposal(name,text,cat){
  const source=(text+" "+name).replace(/---\s*Página\s*\d+\s*---/gi," ").replace(/\s+/g," ").trim();
  const lower=source.toLowerCase();
- // Prefer an explicit date found in the document; normalize to YYYY-MM-DD.
- const date=normalizeDateForName(dateText(source));
+ // Prefer the date in the original filename; otherwise use a date found in the document text.
+ const date=normalizeDateForName(dateText(name)||dateText(text));
  const ex=expediente(source);
  const persona=detectPerson(source);
  const matricula=detectPlate(source);
  const organismo=detectOrganism(source);
-
- // Choose the most specific document type before falling back to the category.
  let tipo="";
  if(/aviso.{0,35}airbag|airbag.{0,35}(?:cambio|sustituci[oó]n|campa[nñ]a)|campa[nñ]a.{0,35}airbag/.test(lower)) tipo="Aviso cambio airbag";
  else if(/factura|base imponible|importe total|n[uú]mero de factura/.test(lower)) tipo="Factura";
@@ -170,34 +195,35 @@ function proposal(name,text,cat){
  else if(cat==="Expedientes") tipo="Documento de expediente";
  else if(cat!=="Revisar") tipo=cat;
 
- // Include only useful, reasonably structured metadata. Avoid copying raw OCR fragments.
  const parts=[];
- if(date) parts.push(date); // User preference: date first whenever confidently detected.
- if(tipo) parts.push(tipo);
- if(ex && /expediente|resoluci[oó]n|notificaci[oó]n|solicitud|documento de expediente/.test((tipo+" "+lower).toLowerCase())) parts.push("Exp "+ex);
+ if(date) parts.push(date);
+ // Category/type is kept as a distinct hyphen-separated segment.
+ if(tipo) parts.push(normalizeFilenamePart(tipo,"_").replace(/_/g,"-").replace(/(^|-)([a-z])/g,(_,p,c)=>p+c.toUpperCase()));
  if(tipo==="Factura"){
-   const invoice=detectInvoiceNumber(source);
-   if(organismo) parts.push(organismo);
-   if(invoice) parts.push("Factura "+invoice);
-   else if(persona) parts.push(persona);
- } else if(tipo==="Cita ITV" || /veh[ií]culos|tr[aá]fico/i.test(cat)){
-   if(matricula) parts.push(matricula);
-   if(organismo && !parts.join(" ").toLowerCase().includes(organismo.toLowerCase())) parts.push(organismo);
+   // Product description from the original filename is more useful than repeating "Factura" or a numeric invoice ID.
+   let product=invoiceProductFromFilename(name)||invoiceProductFromText(text);
+   if(product) parts.push(product);
+   else if(organismo) parts.push(normalizeFilenamePart(organismo));
+   else if(persona) parts.push(normalizeFilenamePart(persona));
  } else {
-   if(organismo && !parts.join(" ").toLowerCase().includes(organismo.toLowerCase())) parts.push(organismo);
-   if(persona && !parts.join(" ").toLowerCase().includes(persona.toLowerCase())) parts.push(persona);
-   if(matricula && !parts.includes(matricula)) parts.push(matricula);
+   if(ex && /expediente|resoluci[oó]n|notificaci[oó]n|solicitud|documento de expediente/i.test(tipo)) parts.push("exp_"+normalizeFilenamePart(ex));
+   if(tipo==="Cita ITV" || /veh[ií]culos|tr[aá]fico/i.test(cat)){
+     if(matricula) parts.push(normalizeFilenamePart(matricula));
+     if(organismo) parts.push(normalizeFilenamePart(organismo));
+   } else {
+     if(organismo) parts.push(normalizeFilenamePart(organismo));
+     if(persona) parts.push(normalizeFilenamePart(persona));
+     if(matricula) parts.push(normalizeFilenamePart(matricula));
+   }
  }
  if(!parts.length){
-   let base=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').replace(/[^\p{L}\p{N}\s.-]/gu,'').replace(/\s+/g,' ').trim();
-   parts.push(base||cat||"Documento");
+   let base=String(name).replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
+   parts.push(normalizeFilenamePart(base)||normalizeFilenamePart(cat)||"documento");
  }
  const extn=name.includes(".")?"."+name.split(".").pop().toLowerCase():"";
- // Deduplicate repeated parts and trim to a sensible length.
- const unique=parts.map(x=>String(x).replace(/[\\/:*?"<>|]/g," ").replace(/\s+/g," ").trim())
-   .filter((x,i,a)=>x && a.findIndex(y=>y.toLowerCase()===x.toLowerCase())===i);
- const stem=unique.join(" - ").replace(/\s+/g," ").trim().slice(0,140).replace(/[ .-]+$/,"");
- return {name:(stem||"Documento")+extn,dest:"/Organizado IA/"+cat+(ex?"/Expediente "+ex:""),meta:{date,expediente:ex,persona,matricula,organismo,tipo}};
+ // No spaces: hyphens between date/category/description, underscores within descriptive phrases.
+ const stem=parts.filter(Boolean).join("-").replace(/-+/g,"-").replace(/^-|-$/g,"").slice(0,140).replace(/[._-]+$/g,"");
+ return {name:(stem||"documento")+extn,dest:"/Organizado IA/"+cat+(ex?"/Expediente "+ex:""),meta:{date,expediente:ex,persona,matricula,organismo,tipo}};
 }
 function detectInvoiceNumber(text){
  const patterns=[
@@ -329,8 +355,8 @@ function copyNameFor(a){
  return {stem,extension};
 }
 function uniqueCopyName(stem,extension,used){
- let candidate=stem+" (copia)"+extension, n=1;
- while(used.has(candidate.toLowerCase())){candidate=stem+" ("+n+")"+extension;n++;}
+ let candidate=stem+"_(copia)"+extension, n=1;
+ while(used.has(candidate.toLowerCase())){candidate=stem+"("+n+")"+extension;n++;}
  used.add(candidate.toLowerCase()); return candidate;
 }
 async function createCopies(){
@@ -349,7 +375,7 @@ async function createCopies(){
     // Avoid overwriting files already present in the chosen folder.
     let finalName=name, n=1;
     while(true){
-     try{await dir.getFileHandle(finalName); finalName=p.stem+" ("+n+")"+p.extension;n++;}
+     try{await dir.getFileHandle(finalName); finalName=p.stem+"("+n+")"+p.extension;n++;}
      catch(e){if(e.name==="NotFoundError")break;throw e;}
     }
     const handle=await dir.getFileHandle(finalName,{create:true});
@@ -370,9 +396,9 @@ async function createCopies(){
 }
 
 function exportReport(){
- let out="ORGANIZADOR IA V1.8 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ let out="ORGANIZADOR IA V1.9 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
  analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
- const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_8.txt";a.click();URL.revokeObjectURL(url);
+ const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_9.txt";a.click();URL.revokeObjectURL(url);
 }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
