@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173b7a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Organizador IA V1.6</title>
+<title>Organizador IA V1.8</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f6fb;color:#17202a}
 header{background:#173b7a;color:white;padding:18px 16px;position:sticky;top:0;z-index:5}
@@ -23,10 +23,10 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 </style>
 </head>
 <body>
-<header><h1>📂 Organizador IA V1.6</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
+<header><h1>📂 Organizador IA V1.8</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
 <main>
 <div class="card">
-<div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
+<div class="safe">🔒 MODO SEGURO: el análisis nunca modifica los originales. Solo se crean copias cuando tú lo apruebas.</div>
 <p>Selecciona documentos, imágenes o textos. La aplicación analizará el contenido y propondrá una organización para que tú la revises.</p>
 <div class="actions">
 <button id="selectBtn" type="button">📂 Seleccionar archivos</button>
@@ -34,9 +34,11 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 <button id="analyze" disabled>🔎 Analizar</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
 <button id="report" class="secondary" disabled>📋 Exportar informe</button>
+<button id="copies" disabled>📄 Crear copias aprobadas</button>
 <button id="categoriesBtn" class="secondary" type="button">⚙️ Categorías</button>
 </div>
 <div id="selection" class="small">Ningún archivo seleccionado.</div>
+<p class="small">Al crear copias, se conservarán los originales. Si el navegador permite elegir una carpeta, podrás guardar las copias junto a ellos; si no, se descargará un ZIP para que lo extraigas en esa carpeta. Los nombres llevarán “(copia)” y, si ya existen, “(1)”, “(2)”, etc.</p>
 <div id="batchPanel" class="field hidden" style="margin-top:12px">
   <div id="batchStatus" class="status">Preparando lote…</div>
   <div class="progress"><div id="batchBar" class="bar"></div></div>
@@ -60,7 +62,7 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 
 <script>
 const $=id=>document.getElementById(id);
-const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
+const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), copiesBtn=$("copies"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
 const selectBtn=$("selectBtn");
 const batchPanel=$("batchPanel"), batchStatus=$("batchStatus"), batchBar=$("batchBar"), batchSummary=$("batchSummary");
 selectBtn.addEventListener("click",()=>filesInput.click());
@@ -85,10 +87,11 @@ renderCategories();
 
 selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
 
-filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; batchPanel.classList.add("hidden"); batchBar.style.width="0%"; batchSummary.textContent=""; renderSelection();});
-clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;batchPanel.classList.add("hidden");batchBar.style.width="0%";batchSummary.textContent="";});
+filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; copiesBtn.disabled=true; batchPanel.classList.add("hidden"); batchBar.style.width="0%"; batchSummary.textContent=""; renderSelection();});
+clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;copiesBtn.disabled=true;batchPanel.classList.add("hidden");batchBar.style.width="0%";batchSummary.textContent="";});
 analyzeBtn.addEventListener("click",analyzeAll);
 reportBtn.addEventListener("click",exportReport);
+copiesBtn.addEventListener("click",createCopies);
 
 function renderSelection(){
  selection.textContent=files.length?`${files.length} archivo(s) seleccionado(s).`:"Ningún archivo seleccionado.";
@@ -143,30 +146,67 @@ function detectOrganism(n){
  return "";
 }
 function proposal(name,text,cat){
- const full=(text+" "+name).replace(/---\s*Página\s*\d+\s*---/gi," ").replace(/\s+/g," ").trim();
- const lower=full.toLowerCase(), d=normalizeDateForName(dateText(full)), ex=expediente(full);
- const persona=detectPerson(full), matricula=detectPlate(full), organismo=detectOrganism(full);
- let tipo="";
- if(/airbag|cambio de airbag|sustitución de airbag|sustitucion de airbag|campaña.*airbag/.test(lower))tipo="Aviso cambio airbag";
- else if(/factura|base imponible|iva|importe total/.test(lower))tipo="Factura";
- else if(/contrato|cláusula|clausula/.test(lower))tipo="Contrato";
- else if(/cita previa|itv|localizador/.test(lower))tipo="Cita ITV";
- else if(/protocolo|procedimiento|instrucción|instruccion/.test(lower))tipo="Protocolo";
- else if(cat==="Expedientes")tipo="Documento de expediente";
- else if(cat!=="Revisar")tipo=cat;
- const parts=[];
- if(d)parts.push(d); if(ex)parts.push("Exp "+ex); if(tipo)parts.push(tipo);
- if(persona)parts.push(persona); if(matricula)parts.push(matricula);
- if(organismo&&!parts.join(" ").toLowerCase().includes(organismo.toLowerCase()))parts.push(organismo);
- if(!parts.length){
-   let base=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').replace(/[^\p{L}\p{N}\s.-]/gu,'').trim();
-   parts.push(base||cat);
- }
- const extn=name.includes(".")?"."+name.split(".").pop():"";
- const newName=parts.join(" - ").replace(/\s+/g," ").trim().slice(0,145)+extn;
- return {name:newName,dest:"/Organizado IA/"+cat+(ex?"/Expediente "+ex:""),meta:{date:d,expediente:ex,persona,matricula,organismo,tipo}};
-}
+ const source=(text+" "+name).replace(/---\s*Página\s*\d+\s*---/gi," ").replace(/\s+/g," ").trim();
+ const lower=source.toLowerCase();
+ // Prefer an explicit date found in the document; normalize to YYYY-MM-DD.
+ const date=normalizeDateForName(dateText(source));
+ const ex=expediente(source);
+ const persona=detectPerson(source);
+ const matricula=detectPlate(source);
+ const organismo=detectOrganism(source);
 
+ // Choose the most specific document type before falling back to the category.
+ let tipo="";
+ if(/aviso.{0,35}airbag|airbag.{0,35}(?:cambio|sustituci[oó]n|campa[nñ]a)|campa[nñ]a.{0,35}airbag/.test(lower)) tipo="Aviso cambio airbag";
+ else if(/factura|base imponible|importe total|n[uú]mero de factura/.test(lower)) tipo="Factura";
+ else if(/resoluci[oó]n(?: administrativa)?|resuelve\s*:/.test(lower)) tipo="Resolución";
+ else if(/notificaci[oó]n(?: administrativa)?|se le notifica|queda notificado/.test(lower)) tipo="Notificación";
+ else if(/contrato|cl[aá]usula|arrendamiento/.test(lower)) tipo="Contrato";
+ else if(/cita previa|itv|localizador|centro de inspecci[oó]n/.test(lower)) tipo="Cita ITV";
+ else if(/solicitud|instancia general|solicita\s*:/.test(lower)) tipo="Solicitud";
+ else if(/informe de seguimiento|seguimiento del expediente/.test(lower)) tipo="Informe de seguimiento";
+ else if(/informe|dictamen/.test(lower)) tipo="Informe";
+ else if(/protocolo|procedimiento|instrucci[oó]n|manual de/.test(lower)) tipo="Protocolo";
+ else if(cat==="Expedientes") tipo="Documento de expediente";
+ else if(cat!=="Revisar") tipo=cat;
+
+ // Include only useful, reasonably structured metadata. Avoid copying raw OCR fragments.
+ const parts=[];
+ if(date) parts.push(date); // User preference: date first whenever confidently detected.
+ if(tipo) parts.push(tipo);
+ if(ex && /expediente|resoluci[oó]n|notificaci[oó]n|solicitud|documento de expediente/.test((tipo+" "+lower).toLowerCase())) parts.push("Exp "+ex);
+ if(tipo==="Factura"){
+   const invoice=detectInvoiceNumber(source);
+   if(organismo) parts.push(organismo);
+   if(invoice) parts.push("Factura "+invoice);
+   else if(persona) parts.push(persona);
+ } else if(tipo==="Cita ITV" || /veh[ií]culos|tr[aá]fico/i.test(cat)){
+   if(matricula) parts.push(matricula);
+   if(organismo && !parts.join(" ").toLowerCase().includes(organismo.toLowerCase())) parts.push(organismo);
+ } else {
+   if(organismo && !parts.join(" ").toLowerCase().includes(organismo.toLowerCase())) parts.push(organismo);
+   if(persona && !parts.join(" ").toLowerCase().includes(persona.toLowerCase())) parts.push(persona);
+   if(matricula && !parts.includes(matricula)) parts.push(matricula);
+ }
+ if(!parts.length){
+   let base=name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').replace(/[^\p{L}\p{N}\s.-]/gu,'').replace(/\s+/g,' ').trim();
+   parts.push(base||cat||"Documento");
+ }
+ const extn=name.includes(".")?"."+name.split(".").pop().toLowerCase():"";
+ // Deduplicate repeated parts and trim to a sensible length.
+ const unique=parts.map(x=>String(x).replace(/[\\/:*?"<>|]/g," ").replace(/\s+/g," ").trim())
+   .filter((x,i,a)=>x && a.findIndex(y=>y.toLowerCase()===x.toLowerCase())===i);
+ const stem=unique.join(" - ").replace(/\s+/g," ").trim().slice(0,140).replace(/[ .-]+$/,"");
+ return {name:(stem||"Documento")+extn,dest:"/Organizado IA/"+cat+(ex?"/Expediente "+ex:""),meta:{date,expediente:ex,persona,matricula,organismo,tipo}};
+}
+function detectInvoiceNumber(text){
+ const patterns=[
+  /(?:n[uú]mero|n[ºo.]?|num\.?)\s*(?:de\s*)?(?:factura)?\s*[:#\-]?\s*([A-Z]{0,5}[-/]?\d{3,})/i,
+  /\bfactura\s*(?:n[uú]m(?:ero)?\.?|n[ºo.]?)?\s*[:#\-]?\s*([A-Z]{0,5}[-/]?\d{3,})/i
+ ];
+ for(const p of patterns){const m=text.match(p);if(m&&m[1])return m[1].replace(/\s+/g,"").slice(0,30);}
+ return "";
+}
 
 async function readTextFile(file){return await file.text();}
 async function readPdf(file,progress){
@@ -210,6 +250,7 @@ async function analyzeAll(){
  results.innerHTML="";
  analyses=[];
  reportBtn.disabled=true;
+ copiesBtn.disabled=true;
  analyzeBtn.disabled=true;
  selectBtn.disabled=true;
  clearBtn.disabled=true;
@@ -270,22 +311,73 @@ async function analyzeAll(){
  selectBtn.disabled=false;
  clearBtn.disabled=false;
  reportBtn.disabled=!analyses.length;
+ copiesBtn.disabled=!analyses.some(a=>a && a.file && !a.error);
 }
 window.saveEdit=function(i,btn){
  const box=btn.closest(".file"),a=analyses[i];
  a.c.cat=box.querySelector(".ecat").value;
  a.p.name=box.querySelector(".ename").value;
  a.p.dest=box.querySelector(".edest").value;
- alert("Propuesta actualizada. No se ha modificado ningún archivo.");
+ const val=box.querySelector(".ename").value; const shown=box.querySelectorAll(".grid .field .value")[1]; if(shown) shown.textContent=val; alert("Propuesta actualizada. Cuando pulses «Crear copias aprobadas», se usará este nombre. El original seguirá intacto.");
 }
+function copyNameFor(a){
+ let name=String(a.p.name||a.file.name).trim().replace(/[\\/:*?"<>|]/g,"_");
+ if(!name) name=a.file.name;
+ const originalExt=(a.file.name.match(/\.[^.]+$/)||[])[0]||"";
+ if(!/\.[^.]+$/.test(name) && originalExt) name+=originalExt;
+ const dot=name.lastIndexOf("."), stem=dot>0?name.slice(0,dot):name, extension=dot>0?name.slice(dot):"";
+ return {stem,extension};
+}
+function uniqueCopyName(stem,extension,used){
+ let candidate=stem+" (copia)"+extension, n=1;
+ while(used.has(candidate.toLowerCase())){candidate=stem+" ("+n+")"+extension;n++;}
+ used.add(candidate.toLowerCase()); return candidate;
+}
+async function createCopies(){
+ const items=analyses.filter(a=>a && a.file && !a.error);
+ if(!items.length){alert("Primero analiza los archivos.");return;}
+ if(!confirm("Se crearán copias con los nombres revisados. Los archivos originales no se modificarán ni se borrarán. ¿Continuar?"))return;
+ copiesBtn.disabled=true;
+ try{
+  if(typeof window.showDirectoryPicker==="function"){
+   let dir;
+   try{dir=await window.showDirectoryPicker({mode:"readwrite",id:"organizador-ia-copias"});}
+   catch(e){if(e && e.name==="AbortError"){alert("Operación cancelada. No se ha creado ninguna copia.");return;}throw e;}
+   const used=new Set();
+   for(const a of items){
+    const p=copyNameFor(a), name=uniqueCopyName(p.stem,p.extension,used);
+    // Avoid overwriting files already present in the chosen folder.
+    let finalName=name, n=1;
+    while(true){
+     try{await dir.getFileHandle(finalName); finalName=p.stem+" ("+n+")"+p.extension;n++;}
+     catch(e){if(e.name==="NotFoundError")break;throw e;}
+    }
+    const handle=await dir.getFileHandle(finalName,{create:true});
+    const writable=await handle.createWritable(); await writable.write(await a.file.arrayBuffer()); await writable.close();
+   }
+   alert("Copias creadas en la carpeta elegida. Los originales se han conservado.");
+  }else{
+   if(typeof JSZip==="undefined")throw new Error("Este navegador no permite guardar directamente en una carpeta y no se ha cargado el generador ZIP.");
+   const zip=new JSZip(), used=new Set();
+   for(const a of items){const p=copyNameFor(a), name=uniqueCopyName(p.stem,p.extension,used);zip.file(name,await a.file.arrayBuffer());}
+   const blob=await zip.generateAsync({type:"blob"});
+   const url=URL.createObjectURL(blob), link=document.createElement("a");link.href=url;link.download="OrganizadorIA_copias_aprobadas.zip";document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+   alert("Tu navegador no permite escribir directamente en la carpeta original. Se ha descargado un ZIP con las copias; extráelo dentro de la misma carpeta de los originales. Estos no se han modificado.");
+  }
+ }catch(e){
+  alert("No se pudieron crear las copias: "+(e.message||e)+". No se han borrado ni renombrado los originales.");
+ }finally{copiesBtn.disabled=!analyses.some(a=>a && a.file && !a.error);}
+}
+
 function exportReport(){
- let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ let out="ORGANIZADOR IA V1.8 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
  analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
- const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_6.txt";a.click();URL.revokeObjectURL(url);
+ const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_8.txt";a.click();URL.revokeObjectURL(url);
 }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </body>
 </html>
