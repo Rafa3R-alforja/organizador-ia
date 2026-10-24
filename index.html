@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173b7a">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Organizador IA V1.6.2</title>
+<title>Organizador IA V1.6</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f3f6fb;color:#17202a}
 header{background:#173b7a;color:white;padding:18px 16px;position:sticky;top:0;z-index:5}
@@ -23,27 +23,25 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 </style>
 </head>
 <body>
-<header><h1>📂 Organizador IA V1.6.2</h1><div class="sub">Analiza por lotes. Revisa y aprueba. Tú decides qué hacer.</div></header>
+<header><h1>📂 Organizador IA V1.6</h1><div class="sub">Analiza el contenido. Tú decides qué hacer.</div></header>
 <main>
 <div class="card">
 <div class="safe">🔒 MODO SEGURO: no se modifican, mueven, renombran ni eliminan archivos.</div>
 <p>Selecciona documentos, imágenes o textos. La aplicación analizará el contenido y propondrá una organización para que tú la revises.</p>
 <div class="actions">
-<button id="selectBtn" type="button">📂 Seleccionar varios</button>
-<button id="addBtn" class="secondary" type="button">➕ Añadir archivo al lote</button>
-<input id="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.txt,.csv,.md,.json,.xml,.html,.htm,.docx" style="display:none">
-<input id="addFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.txt,.csv,.md,.json,.xml,.html,.htm,.docx" style="display:none">
-<button id="analyze" disabled>🔎 Analizar lote</button>
-<button id="approveAll" class="secondary" disabled>✅ Aprobar lote</button>
-<button id="executeApproved" disabled>▶️ Ejecutar aprobados</button>
+<button id="selectBtn" type="button">📂 Seleccionar archivos</button>
+<input id="files" type="file" multiple>
+<button id="analyze" disabled>🔎 Analizar</button>
 <button id="clear" class="secondary">🗑️ Limpiar</button>
 <button id="report" class="secondary" disabled>📋 Exportar informe</button>
 <button id="categoriesBtn" class="secondary" type="button">⚙️ Categorías</button>
 </div>
 <div id="selection" class="small">Ningún archivo seleccionado.</div>
-<div id="batchProgress" class="hidden" style="margin-top:12px"><div class="top"><b>Progreso del lote</b><span id="batchPercent" class="small">0%</span></div><div class="progress"><div id="batchBar" class="bar"></div></div><div id="batchStatus" class="small" style="margin-top:5px">Preparado.</div></div>
-<div id="summary" class="hidden" style="margin-top:12px"></div>
-<div id="execution" class="hidden card" style="margin-top:12px"></div>
+<div id="batchPanel" class="field hidden" style="margin-top:12px">
+  <div id="batchStatus" class="status">Preparando lote…</div>
+  <div class="progress"><div id="batchBar" class="bar"></div></div>
+  <div id="batchSummary" class="small" style="margin-top:7px"></div>
+</div>
 </div>
 <div id="categoriesPanel" class="card hidden">
 <h2 style="margin-top:0">⚙️ Categorías de clasificación</h2>
@@ -62,11 +60,11 @@ pre{white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;ba
 
 <script>
 const $=id=>document.getElementById(id);
-const filesInput=$("files"), addFileInput=$("addFile"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
-const selectBtn=$("selectBtn"), addBtn=$("addBtn"), approveAllBtn=$("approveAll"), executeApprovedBtn=$("executeApproved"), batchProgress=$("batchProgress"), batchBar=$("batchBar"), batchPercent=$("batchPercent"), batchStatus=$("batchStatus"), summary=$("summary");
-selectBtn.addEventListener("click",()=>{filesInput.value="";filesInput.click()});
-addBtn.addEventListener("click",()=>{addFileInput.value="";addFileInput.click()});
-let files=[], analyses=[], isAnalyzing=false;
+const filesInput=$("files"), analyzeBtn=$("analyze"), clearBtn=$("clear"), reportBtn=$("report"), selection=$("selection"), results=$("results"), categoriesPanel=$("categoriesPanel"), categoryList=$("categoryList"), categoriesBtn=$("categoriesBtn"), addCategoryBtn=$("addCategory"), resetCategoriesBtn=$("resetCategories");
+const selectBtn=$("selectBtn");
+const batchPanel=$("batchPanel"), batchStatus=$("batchStatus"), batchBar=$("batchBar"), batchSummary=$("batchSummary");
+selectBtn.addEventListener("click",()=>filesInput.click());
+let files=[], analyses=[];
 const BUILTIN_RULES=[
  ["Vehículos / Tráfico",["airbag","cambio de airbag","sustitución de airbag","sustitucion de airbag","campaña airbag","campana airbag","aviso cambio airbag"],"Contiene referencias a un aviso o campaña relacionada con airbags o vehículos."],
  ["Facturas",["factura","base imponible","iva","importe total","proveedor","precio abonado","pago realizado"],"Documento económico o factura."],
@@ -85,44 +83,16 @@ addCategoryBtn.addEventListener("click",()=>{const name=$("newCat").value.trim()
 resetCategoriesBtn.addEventListener("click",()=>{if(confirm("¿Eliminar todas las categorías añadidas por ti? Las categorías incorporadas no se borrarán.")){localStorage.removeItem("organizadorIA_customCategories");renderCategories()}});
 renderCategories();
 
-selection.textContent="Aplicación cargada. Puedes seleccionar varios archivos o añadirlos uno a uno al lote.";
+selection.textContent="Aplicación cargada. Pulsa «Seleccionar archivos».";
 
-function appendFiles(incoming){
-  if(!incoming.length)return;
-  const existing=new Set(files.map(f=>f.name+"|"+f.size+"|"+f.lastModified));
-  const added=incoming.filter(f=>!existing.has(f.name+"|"+f.size+"|"+f.lastModified));
-  if(!added.length){
-    selection.textContent=`No se añadió ningún archivo nuevo. El lote ya contiene esos archivos.`;
-    return;
-  }
-  files=[...files,...added];
-  analyses=[];
-  results.innerHTML="";
-  reportBtn.disabled=true;
-  approveAllBtn.disabled=true;
-  executeApprovedBtn.disabled=true;
-  execution.classList.add("hidden");
-  summary.classList.add("hidden");
-  batchProgress.classList.add("hidden");
-  renderSelection();
-}
-filesInput.addEventListener("change",()=>{appendFiles([...filesInput.files]);filesInput.value="";});
-addFileInput.addEventListener("change",()=>{appendFiles([...addFileInput.files]);addFileInput.value="";});
-clearBtn.addEventListener("click",()=>{if(isAnalyzing)return;files=[];analyses=[];filesInput.value="";addFileInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;approveAllBtn.disabled=true;executeApprovedBtn.disabled=true;summary.classList.add("hidden");batchProgress.classList.add("hidden");execution.classList.add("hidden");});
+filesInput.addEventListener("change",()=>{files=[...filesInput.files]; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; batchPanel.classList.add("hidden"); batchBar.style.width="0%"; batchSummary.textContent=""; renderSelection();});
+clearBtn.addEventListener("click",()=>{files=[];analyses=[];filesInput.value="";renderSelection();results.innerHTML="";reportBtn.disabled=true;batchPanel.classList.add("hidden");batchBar.style.width="0%";batchSummary.textContent="";});
 analyzeBtn.addEventListener("click",analyzeAll);
-approveAllBtn.addEventListener("click",approveAll);
 reportBtn.addEventListener("click",exportReport);
-executeApprovedBtn.addEventListener("click",executeApproved);
 
 function renderSelection(){
- selection.textContent=files.length?`${files.length} archivo(s) preparado(s) para el lote. Puedes pulsar «Añadir archivo al lote» para incorporar más.`:"Ningún archivo seleccionado.";
- analyzeBtn.disabled=!files.length||isAnalyzing;
-}
-function updateBatch(done,total,msg){const pct=total?Math.round(done/total*100):0;batchProgress.classList.remove("hidden");batchBar.style.width=pct+"%";batchPercent.textContent=pct+"%";batchStatus.textContent=msg||"Procesando…";}
-function renderSummary(){
- const total=analyses.length, ok=analyses.filter(a=>!a.error).length, err=analyses.filter(a=>a.error).length, approved=analyses.filter(a=>a.approved).length, review=analyses.filter(a=>!a.error&&!a.approved).length;
- summary.classList.remove("hidden");summary.innerHTML=`<div class="field"><b>Resumen del lote</b><div class="small" style="margin-top:6px">Total: ${total} · Analizados: ${ok} · Errores: ${err} · Aprobados: ${approved} · Pendientes de revisión: ${review}</div></div>`;
- reportBtn.disabled=!total; approveAllBtn.disabled=!ok||isAnalyzing||approved===ok; executeApprovedBtn.disabled=isAnalyzing||approved===0;
+ selection.textContent=files.length?`${files.length} archivo(s) seleccionado(s).`:"Ningún archivo seleccionado.";
+ analyzeBtn.disabled=!files.length;
 }
 
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
@@ -236,105 +206,81 @@ async function extract(file,progress){
  return {text:"",pages:1,method:"Nombre/metadatos"};
 }
 async function analyzeAll(){
- if(isAnalyzing||!files.length)return;
- isAnalyzing=true; analyses=[]; results.innerHTML=""; reportBtn.disabled=true; approveAllBtn.disabled=true; executeApprovedBtn.disabled=true; execution.classList.add("hidden"); analyzeBtn.disabled=true; clearBtn.disabled=true;
- updateBatch(0,files.length,"Iniciando análisis del lote…");
+ if(!files.length) return;
+ results.innerHTML="";
+ analyses=[];
+ reportBtn.disabled=true;
+ analyzeBtn.disabled=true;
+ selectBtn.disabled=true;
+ clearBtn.disabled=true;
+ batchPanel.classList.remove("hidden");
+ batchBar.style.width="0%";
+ batchStatus.textContent="Iniciando análisis de "+files.length+" archivo(s)…";
+ batchSummary.textContent="El análisis es secuencial. No se modifica ningún archivo.";
+ let errors=0;
  for(let i=0;i<files.length;i++){
    const file=files[i], id="r"+i;
-   results.insertAdjacentHTML("beforeend",`<div class="card file" id="${id}"><div class="top"><div><div class="name">⏳ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">Pendiente</span></div><div class="status">Preparando análisis…</div><div class="progress"><div class="bar"></div></div></div>`);
+   batchStatus.textContent=`Analizando ${i+1} de ${files.length}: ${file.name}`;
+   batchBar.style.width=Math.round((i/files.length)*100)+"%";
+   results.insertAdjacentHTML("beforeend",`<div class="card file" id="${id}"><div class="name">⏳ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div><div class="status">Preparando análisis…</div><div class="progress"><div class="bar"></div></div></div>`);
    const box=$(id), status=box.querySelector(".status"), bar=box.querySelector(".bar");
    try{
-     updateBatch(i,files.length,`Analizando ${i+1} de ${files.length}: ${file.name}`);
-     const r=await extract(file,msg=>{status.textContent=msg;bar.style.width="65%";});
+     const r=await extract(file,msg=>{status.textContent=msg;bar.style.width="70%";});
      const c=classify(r.text,file.name), p=proposal(file.name,r.text,c.cat);
-     const a={file,r,c,p,approved:false,status:"Pendiente de revisión"}; analyses.push(a); bar.style.width="100%";
-     box.innerHTML=`<div class="top"><div><div class="name">📄 ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge statusBadge">Pendiente de revisión</span></div>
-     <div class="grid"><div class="field"><div class="label">Categoría propuesta</div><div class="value">${esc(c.cat)}</div></div><div class="field"><div class="label">Nuevo nombre</div><div class="value">${esc(p.name)}</div></div><div class="field"><div class="label">Destino propuesto</div><div class="value">${esc(p.dest)}</div></div><div class="field"><div class="label">Método</div><div class="value">${esc(r.method)}</div></div></div>
-     <p><b>💡 Explicación:</b> ${esc(c.why)}</p><p class="small">Texto recuperado: ${r.text.length} caracteres · ${r.pages} página(s).</p>
-     <div class="small"><b>Datos detectados:</b> ${esc([p.meta?.date?("Fecha: "+p.meta.date):"",p.meta?.expediente?("Expediente: "+p.meta.expediente):"",p.meta?.persona?("Persona: "+p.meta.persona):"",p.meta?.matricula?("Matrícula: "+p.meta.matricula):"",p.meta?.organismo?("Organismo: "+p.meta.organismo):""].filter(Boolean).join(" · ")||"No se han detectado datos adicionales.")}</div>
+     const a={file,r,c,p};
+     analyses.push(a);bar.style.width="100%";
+     box.innerHTML=`<div class="top"><div><div class="name">📄 ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">${c.confidence}% confianza</span></div>
+     <div class="grid">
+      <div class="field"><div class="label">Categoría propuesta</div><div class="value">${esc(c.cat)}</div></div>
+      <div class="field"><div class="label">Nuevo nombre</div><div class="value">${esc(p.name)}</div></div>
+      <div class="field"><div class="label">Destino propuesto</div><div class="value">${esc(p.dest)}</div></div>
+      <div class="field"><div class="label">Método</div><div class="value">${esc(r.method)}</div></div>
+     </div>
+     <p><b>💡 Explicación:</b> ${esc(c.why)}</p>
+     <p class="small">Texto recuperado: ${r.text.length} caracteres · ${r.pages} página(s).</p>
+     <div class="small"><b>Datos detectados:</b> ${esc([
+       p.meta?.date?("Fecha: "+p.meta.date):"",
+       p.meta?.expediente?("Expediente: "+p.meta.expediente):"",
+       p.meta?.persona?("Persona: "+p.meta.persona):"",
+       p.meta?.matricula?("Matrícula: "+p.meta.matricula):"",
+       p.meta?.organismo?("Organismo: "+p.meta.organismo):""
+     ].filter(Boolean).join(" · ")||"No se han detectado datos adicionales.")}</div>
      <details><summary>Ver contenido recuperado</summary><pre>${esc(r.text||"No se ha recuperado texto.")}</pre></details>
-     <div class="actions"><button class="secondary" onclick="this.parentElement.parentElement.querySelector('.edit').classList.toggle('hidden')">✏️ Revisar propuesta</button><button onclick="approveOne(${i})">✅ Aprobar</button></div>
-     <div class="edit hidden"><div class="grid"><div class="field"><div class="label">Categoría</div><input class="ecat" value="${esc(c.cat)}" style="width:100%;padding:9px"></div><div class="field"><div class="label">Nombre</div><input class="ename" value="${esc(p.name)}" style="width:100%;padding:9px"></div><div class="field"><div class="label">Destino</div><input class="edest" value="${esc(p.dest)}" style="width:100%;padding:9px"></div></div><button onclick="saveEdit(${i},this)">💾 Guardar cambios</button></div>`;
+     <div class="actions"><button class="secondary" onclick="this.parentElement.parentElement.querySelector('.edit').classList.toggle('hidden')">✏️ Revisar propuesta</button></div>
+     <div class="edit hidden">
+       <div class="grid">
+        <div class="field"><div class="label">Categoría</div><input class="ecat" value="${esc(c.cat)}" style="width:100%;padding:9px"></div>
+        <div class="field"><div class="label">Nombre</div><input class="ename" value="${esc(p.name)}" style="width:100%;padding:9px"></div>
+        <div class="field"><div class="label">Destino</div><input class="edest" value="${esc(p.dest)}" style="width:100%;padding:9px"></div>
+       </div>
+       <button onclick="saveEdit(${i},this)">💾 Guardar cambios</button>
+     </div>`;
    }catch(e){
-     const a={file,r:{text:"",method:"Error",pages:0},c:{cat:"Revisar",confidence:0,why:"No se pudo analizar el archivo.",hits:[]},p:{name:file.name,dest:"/Organizado IA/Revisar"},error:e.message||String(e),approved:false,status:"Error"}; analyses.push(a);
-     box.innerHTML=`<div class="top"><div><div class="name">❌ ${esc(file.name)}</div><div class="meta">${esc(file.type||"tipo no identificado")} · ${size(file.size)}</div></div><span class="badge">Error</span></div><p class="err">No se pudo analizar: ${esc(e.message||e)}</p><p class="small">El lote continúa con el siguiente archivo.</p>`;
+     errors++;
+     analyses.push({file,r:{text:"",method:"Error",pages:0},c:{cat:"Revisar",confidence:0,why:"No se pudo analizar el archivo.",hits:[]},p:{name:file.name,dest:"/Organizado IA/Revisar"},error:e.message});
+     box.innerHTML=`<div class="name">❌ ${esc(file.name)}</div><p class="err">No se pudo analizar: ${esc(e.message||e)}</p>`;
    }
-   updateBatch(i+1,files.length,`Completado ${i+1} de ${files.length}`);
-   renderSummary();
+   batchBar.style.width=Math.round(((i+1)/files.length)*100)+"%";
+   batchSummary.textContent=`Procesados: ${i+1} de ${files.length} · Errores: ${errors} · Archivos sin modificar.`;
+   await new Promise(resolve=>setTimeout(resolve, 0));
  }
- isAnalyzing=false; clearBtn.disabled=false; analyzeBtn.disabled=false; renderSummary(); updateBatch(files.length,files.length,`Lote terminado: ${analyses.length} archivo(s) procesado(s).`);
+ batchStatus.textContent="Análisis finalizado";
+ batchSummary.textContent=`Finalizado: ${analyses.length} resultado(s) · ${errors} error(es) · ${files.length-errors} archivo(s) analizado(s). No se ha movido, renombrado ni eliminado ningún archivo.`;
+ analyzeBtn.disabled=false;
+ selectBtn.disabled=false;
+ clearBtn.disabled=false;
+ reportBtn.disabled=!analyses.length;
 }
-window.approveOne=function(i){
- const a=analyses[i]; if(!a||a.error)return;
- a.approved=true; a.status="Aprobado";
- const box=$("r"+i); if(box){const badge=box.querySelector(".statusBadge");if(badge)badge.textContent="Aprobado";const buttons=box.querySelectorAll("button");buttons.forEach(b=>{if(b.textContent.includes("Aprobar"))b.disabled=true;});}
- renderSummary();
-};
-function approveAll(){analyses.forEach((a,i)=>{if(!a.error&&!a.approved)approveOne(i);});renderSummary();}
 window.saveEdit=function(i,btn){
  const box=btn.closest(".file"),a=analyses[i];
  a.c.cat=box.querySelector(".ecat").value;
  a.p.name=box.querySelector(".ename").value;
  a.p.dest=box.querySelector(".edest").value;
- a.status="Pendiente de revisión"; a.approved=false;
- const badge=box.querySelector(".statusBadge"); if(badge)badge.textContent="Pendiente de revisión";
- renderSummary();
  alert("Propuesta actualizada. No se ha modificado ningún archivo.");
 }
-async function executeApproved(){
- const approved=analyses.filter(a=>a.approved&&!a.error);
- if(!approved.length){alert("No hay documentos aprobados para ejecutar.");return;}
- const ok=confirm("Se van a COPIAR los documentos aprobados a la carpeta que elijas. Los originales NO se eliminarán ni modificarán. ¿Continuar?");
- if(!ok)return;
- if(!window.showDirectoryPicker){
-   alert("Este navegador no permite seleccionar una carpeta de destino desde la aplicación. La ejecución segura requiere un navegador compatible con File System Access API.");
-   return;
- }
- let root;
- try{root=await window.showDirectoryPicker({mode:"readwrite"});}
- catch(e){if(e&&e.name!=="AbortError")alert("No se pudo seleccionar la carpeta de destino: "+(e.message||e));return;}
- execution.classList.remove("hidden");
- execution.innerHTML='<div class="safe">🔐 EJECUCIÓN SEGURA: se crearán copias organizadas. Los originales permanecerán intactos.</div><div id="execProgress" style="margin-top:10px"></div><div id="execResults" style="margin-top:10px"></div>';
- const ep=$("execProgress"), er=$("execResults"); let done=0,created=0,errors=0;
- for(const a of approved){
-   done++; const name=safeFileName(a.p.name||a.file.name), category=safeFolderName(a.c.cat||"Revisar"), destText=a.p.dest||"Organizado IA";
-   try{
-     let dir=root;
-     const parts=categoryPath(destText,category);
-     for(const part of parts) dir=await dir.getDirectoryHandle(part,{create:true});
-     const target=await uniqueFileHandle(dir,name);
-     const writable=await target.createWritable();
-     await writable.write(await a.file.arrayBuffer()); await writable.close();
-     created++; a.execution={status:"Ejecutado",name,destination:parts.join("/")+"/"+name};
-     er.insertAdjacentHTML("beforeend",'<div class="field">✅ <b>'+esc(a.file.name)+'</b> → '+esc(a.execution.destination)+'</div>');
-   }catch(e){
-     errors++; a.execution={status:"Error",error:e.message||String(e)};
-     er.insertAdjacentHTML("beforeend",'<div class="field">❌ <b>'+esc(a.file.name)+'</b>: '+esc(e.message||e)+'</div>');
-   }
-   ep.innerHTML='<b>Progreso de ejecución:</b> '+done+'/'+approved.length+' · Creados: '+created+' · Errores: '+errors+'<div class="progress"><div class="bar" style="width:'+Math.round(done/approved.length*100)+'%"></div></div>';
- }
- er.insertAdjacentHTML("afterbegin",'<p><b>Resultado:</b> '+created+' copia(s) creada(s) · '+errors+' error(es). Los originales no se han eliminado.</p>');
-}
-function safeFolderName(s){return String(s||"Revisar").replace(/[\\/:*?"<>|]/g,"-").replace(/\s+/g," ").trim().slice(0,80)||"Revisar";}
-function safeFileName(s){return String(s||"documento").replace(/[\\/:*?"<>|]/g,"-").replace(/\s+/g," ").trim().slice(0,180)||"documento";}
-function categoryPath(dest,category){
- let raw=String(dest||"").replace(/\\/g,"/").split("/").map(x=>x.trim()).filter(Boolean).filter(x=>x!==".");
- raw=raw.map(safeFolderName).slice(0,8);
- if(!raw.length)raw=["Organizado IA"];
- if(raw[raw.length-1].toLowerCase()!==category.toLowerCase())raw.push(category);
- return raw;
-}
-async function uniqueFileHandle(dir,name){
- const dot=name.lastIndexOf("."), base=dot>0?name.slice(0,dot):name, extn=dot>0?name.slice(dot):"";
- let candidate=name, n=1;
- while(true){
-   try{await dir.getFileHandle(candidate,{create:false}); candidate=base+" ("+(++n)+")"+extn;}
-   catch(e){if(e.name==="NotFoundError")return await dir.getFileHandle(candidate,{create:true}); throw e;}
- }
-}
 function exportReport(){
- let out="ORGANIZADOR IA V1.6.2 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
- analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Estado: "+(a.error?"ERROR":(a.approved?"APROBADO":"PENDIENTE DE REVISIÓN"))+"\n Aprobada para futura ejecución: "+(a.approved?"Sí":"No")+"\n Error: "+(a.error||"Ninguno")+"\n\n";});
+ let out="ORGANIZADOR IA V1.6 — INFORME DE ANÁLISIS\nMODO SEGURO: no se han realizado modificaciones.\n\n";
+ analyses.forEach((a,i)=>{out+=(i+1)+". "+a.file.name+"\n Categoría: "+a.c.cat+"\n Nuevo nombre: "+a.p.name+"\n Destino: "+a.p.dest+"\n Confianza: "+a.c.confidence+"%\n Método: "+a.r.method+"\n Explicación: "+a.c.why+"\n Texto recuperado: "+a.r.text.length+" caracteres\n Aprobada para futura ejecución: No\n\n";});
  const blob=new Blob([out],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="informe_organizador_ia_v1_6.txt";a.click();URL.revokeObjectURL(url);
 }
 </script>
